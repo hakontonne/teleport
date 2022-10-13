@@ -356,6 +356,8 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 )
 
+require cloud.google.com/go/kms v1.4.0
+
 // Update also `ignore` in .github/dependabot.yml.
 replace (
 	github.com/coreos/go-oidc => github.com/gravitational/go-oidc v0.0.6

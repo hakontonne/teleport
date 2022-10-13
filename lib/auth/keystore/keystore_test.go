@@ -201,7 +201,8 @@ func TestKeyStore(t *testing.T) {
 		{
 			desc: "kms",
 			config: keystore.Config{
-				KMSKeyRing: "server1",
+				KMSKeyRing: "projects/teleport-dev-320620/locations/us-west1/keyRings/nic-hsm-test",
+				HostUUID: "server1",
 			},
 			shouldSkip: func() bool {
 				return false
