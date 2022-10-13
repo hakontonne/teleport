@@ -198,6 +198,15 @@ func TestKeyStore(t *testing.T) {
 				return false
 			},
 		},
+		{
+			desc: "kms",
+			config: keystore.Config{
+				KMSKeyRing: "server1",
+			},
+			shouldSkip: func() bool {
+				return false
+			},
+		},
 	}
 
 	for _, tc := range testcases {

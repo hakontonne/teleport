@@ -103,11 +103,13 @@ type Config struct {
 	Pin string
 	// HostUUID is the UUID of the local auth server this HSM is connected to.
 	HostUUID string
+
+	KMSKeyRing string
 }
 
 func (cfg *Config) CheckAndSetDefaults() error {
-	if cfg.Path == "" && cfg.RSAKeyPairSource == nil {
-		return trace.BadParameter("must provide one of Path or RSAKeyPairSource in keystore.Config")
+	if cfg.Path == "" && cfg.RSAKeyPairSource == nil && cfg.KMSKeyRing == "" {
+		return trace.BadParameter("must provide one of Path or RSAKeyPairSource or KMSKeyRing in keystore.Config")
 	}
 	if cfg.Path != "" {
 		// HSM is configured, check the rest of the required params
@@ -125,6 +127,11 @@ func (cfg *Config) CheckAndSetDefaults() error {
 func NewKeyStore(cfg Config) (KeyStore, error) {
 	if err := cfg.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
+	}
+	if cfg.KMSKeyRing != "" {
+		return NewKMSKeyStore(&KMSConfig{
+			KeyRing: cfg.KMSKeyRing,
+		})
 	}
 	if cfg.Path == "" {
 		return NewRawKeyStore(&RawConfig{cfg.RSAKeyPairSource}), nil
