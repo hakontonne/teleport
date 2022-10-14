@@ -27,6 +27,7 @@ import (
 	"github.com/denisenkom/go-mssqldb/msdsn"
 	"github.com/gravitational/trace"
 
+	"github.com/gravitational/teleport/lib/auth"
 	"github.com/gravitational/teleport/lib/srv/db/common"
 	"github.com/gravitational/teleport/lib/srv/db/sqlserver/protocol"
 )
@@ -38,7 +39,10 @@ type Connector interface {
 }
 
 type connector struct {
-	Auth common.Auth
+	// Auth is the database auth client
+	DBAuth common.Auth
+	// AuthClient is the teleport client
+	AuthClient auth.ClientI
 }
 
 // Connect connects to the target SQL Server with Kerberos authentication.
@@ -53,7 +57,7 @@ func (c *connector) Connect(ctx context.Context, sessionCtx *common.Session, log
 		return nil, nil, trace.Wrap(err)
 	}
 
-	tlsConfig, err := c.Auth.GetTLSConfig(ctx, sessionCtx)
+	tlsConfig, err := c.DBAuth.GetTLSConfig(ctx, sessionCtx)
 	if err != nil {
 		return nil, nil, trace.Wrap(err)
 	}
@@ -80,7 +84,7 @@ func (c *connector) Connect(ctx context.Context, sessionCtx *common.Session, log
 		// If the client is connecting to Azure SQL, and no AD configuration is
 		// provided, authenticate using the Azure AD Integrated authentication
 		// method.
-		managedIdentityID, err := c.Auth.GetAzureIdentityResourceID(ctx, sessionCtx.DatabaseUser)
+		managedIdentityID, err := c.DBAuth.GetAzureIdentityResourceID(ctx, sessionCtx.DatabaseUser)
 		if err != nil {
 			return nil, nil, trace.Wrap(err)
 		}
@@ -93,7 +97,8 @@ func (c *connector) Connect(ctx context.Context, sessionCtx *common.Session, log
 			return nil, nil, trace.Wrap(err)
 		}
 	} else {
-		auth, err := c.getAuth(sessionCtx)
+		kt := &keytabClient{session: sessionCtx}
+		auth, err := c.getAuth(sessionCtx, kt)
 		if err != nil {
 			return nil, nil, trace.Wrap(err)
 		}
