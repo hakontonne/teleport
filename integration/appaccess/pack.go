@@ -273,7 +273,7 @@ func (p *Pack) CreateAppSession(t *testing.T, publicAddr, clusterName string) st
 	err = json.Unmarshal(body, &casResp)
 	require.NoError(t, err)
 
-	return casResp.CookieName
+	return casResp.CookieValue
 }
 
 // makeWebapiRequest makes a request to the root cluster Web API.
