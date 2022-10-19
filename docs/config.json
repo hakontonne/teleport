@@ -844,6 +844,10 @@
           "slug": "/desktop-access/introduction/"
         },
         {
+          "title": "Desktop Discovery",
+          "slug": "/desktop-access/discovery/"
+        },
+        {
           "title": "Getting Started",
           "slug": "/desktop-access/getting-started/"
         },
