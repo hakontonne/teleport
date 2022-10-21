@@ -4434,7 +4434,7 @@ func (process *TeleportProcess) initApps() {
 			return trace.Wrap(err)
 		}
 		defer func() {
-			if !ok {
+			if !shouldSkipCleanup {
 				warnOnErr(asyncEmitter.Close(), process.log)
 			}
 		}()
