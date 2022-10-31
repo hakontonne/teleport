@@ -1237,11 +1237,24 @@ func (a *ServerWithRoles) ListResources(ctx context.Context, req proto.ListResou
 	req.SearchKeywords = nil
 	req.PredicateExpression = ""
 
+	resourceChecker, err := a.newResourceAccessChecker(req.ResourceType)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
 	var resp types.ListResourcesResponse
 	if err := a.authServer.IterateResources(ctx, req, func(resource types.ResourceWithLabels) error {
 		if len(resp.Resources) == limit {
 			resp.NextKey = backend.GetPaginationKey(resource)
 			return ErrDone
+		}
+
+		if err := resourceChecker.CanAccess(resource); err != nil {
+			if trace.IsAccessDenied(err) {
+				return nil
+			}
+
+			return trace.Wrap(err)
 		}
 
 		switch match, err := services.MatchResourceByFilters(resource, filter, nil /* ignore dup matches  */); {
@@ -4693,13 +4706,15 @@ func (a *ServerWithRoles) checkAccessToNode(node types.Server) error {
 		return trace.Wrap(standardRBAC)
 	}
 
-	predicateRBAC, err := a.context.PredicateChecker.CheckAccessToNode(&predicate.Node{
+	predicateRBAC, err := a.context.PredicateChecker.CheckAccessToResource(&predicate.Resource{
 		Namespace: node.GetNamespace(),
+		Kind:      node.GetKind(),
 		Labels:    node.GetAllLabels(),
 	}, &predicate.User{
 		Name: a.context.User.GetName(),
 		// TODO(joel): user->policy mapping discussion
 		Policies:  nil,
+		Roles:     nil,
 		SSHLogins: a.context.User.GetLogins(),
 		Traits:    a.context.User.GetTraits(),
 	})
@@ -4710,7 +4725,7 @@ func (a *ServerWithRoles) checkAccessToNode(node types.Server) error {
 	switch {
 	case !predicateRBAC && standardRBAC == nil:
 		return trace.AccessDenied("access denied to node %q", node.GetHostname())
-	case standardRBAC != nil:
+	case !predicateRBAC && standardRBAC != nil:
 		return trace.Wrap(standardRBAC)
 	}
 

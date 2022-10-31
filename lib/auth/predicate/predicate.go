@@ -89,16 +89,16 @@ func NewPredicateAccessChecker(policies []types.Policy) *PredicateAccessChecker 
 	return &PredicateAccessChecker{policies}
 }
 
-// CheckLoginAccessToNode checks if a given user has login access to a Server Access node.
-func (c *PredicateAccessChecker) CheckLoginAccessToNode(node *Node, connection *Connection, user *User) (bool, error) {
-	env := buildEnv(node, connection, user)
+// CheckAccessToNode checks if a given user has login access to a Server Access node.
+func (c *PredicateAccessChecker) CheckLoginAccessToNode(node *Node, user *User) (bool, error) {
+	env := buildEnv(node, user)
 	return c.checkPolicyExprs("node", env)
 }
 
-// CheckAccessToNode checks if a given user has access to view a Server Access node.
-func (c *PredicateAccessChecker) CheckAccessToNode(node *Node, user *User) (bool, error) {
-	env := buildEnv(node, user)
-	return c.checkPolicyExprs("node", env)
+// CheckAccessToResource checks if a given user has access to view a resource.
+func (c *PredicateAccessChecker) CheckAccessToResource(resource *Resource, user *User) (bool, error) {
+	env := buildEnv(resource, user)
+	return c.checkPolicyExprs("resource", env)
 }
 
 // checkPolicyExprs is the internal routine that evaluates expressions in a given scope from all policies
@@ -152,10 +152,30 @@ func (c *PredicateAccessChecker) checkPolicyExprs(scope string, env map[string]a
 	return false, nil
 }
 
+// Resource describes an arbitrary resource that can be viewed and listed.
+type Resource struct {
+	// Namespace is the namespace of the resource.
+	Namespace string `json:"namespace"`
+
+	// The resource kind.
+	Kind string `json:"kind"`
+
+	// The labels on the resource.
+	Labels map[string]string `json:"labels"`
+}
+
+// GetName returns the name of the object.
+func (n *Resource) GetName() string {
+	return "resource"
+}
+
 // Node describes a Server Access node.
 type Node struct {
 	// Namespace is the namespace of the node.
-	Namespace string
+	Namespace string `json:"namespace"`
+
+	// The UNIX login of the connection
+	Login string `json:"login"`
 
 	// The labels on the target node.
 	Labels map[string]string `json:"labels"`
@@ -166,17 +186,6 @@ func (n *Node) GetName() string {
 	return "node"
 }
 
-// The node connection information.
-type Connection struct {
-	// The UNIX login of the connection
-	Login string `json:"login"`
-}
-
-// GetName returns the name of the object.
-func (n *Connection) GetName() string {
-	return "connection"
-}
-
 // User describes a Teleport user.
 type User struct {
 	// The name of the Teleport user.
@@ -184,6 +193,9 @@ type User struct {
 
 	// All access policies assigned to the user.
 	Policies []string `json:"policies"`
+
+	// All roles assigned to the user.
+	Roles []string `json:"roles"`
 
 	// SSH logins/principals assigned to the user.
 	SSHLogins []string `json:"ssh_logins"`
