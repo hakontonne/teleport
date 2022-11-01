@@ -761,6 +761,7 @@ func New(addr utils.NetAddr,
 		FIPS:        s.fips,
 		Emitter:     s.StreamEmitter,
 		Clock:       s.clock,
+		Auth:        auth,
 	}
 
 	s.authHandlers, err = srv.NewAuthHandlers(&authHandlerConfig)

@@ -5193,7 +5193,8 @@ func (a *ServerWithRoles) GetPolicy(ctx context.Context, name string) (types.Pol
 
 // GetPolicies lists policies in the cluster
 func (a *ServerWithRoles) GetPolicies(ctx context.Context) ([]types.Policy, error) {
-	if err := a.action(apidefaults.Namespace, types.KindAccessPolicy, types.VerbList); err != nil {
+	// TODO(joel): use proper permissions for nodes/proxies
+	if err := a.action(apidefaults.Namespace, types.KindAccessPolicy, types.VerbList); err != nil && a.serverAction() != nil {
 		return nil, trace.Wrap(err)
 	}
 

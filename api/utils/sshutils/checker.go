@@ -19,6 +19,7 @@ package sshutils
 import (
 	"crypto/rsa"
 	"net"
+	"strings"
 
 	"github.com/gravitational/teleport/api/constants"
 
@@ -40,18 +41,23 @@ type CertChecker struct {
 }
 
 // Authenticate checks the validity of a user certificate.
-func (c *CertChecker) Authenticate(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+func (c *CertChecker) Authenticate(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, bool, error) {
 	err := c.validateFIPS(key)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return nil, false, trace.Wrap(err)
 	}
 
+	// TODO(joel): certchecker hack
 	perms, err := c.CertChecker.Authenticate(conn, key)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		if strings.Contains(err.Error(), "not in the set of valid principals for given certificat") {
+			return perms, true, nil
+		}
+
+		return nil, false, trace.Wrap(err)
 	}
 
-	return perms, nil
+	return perms, false, nil
 }
 
 // CheckCert checks certificate metadata and signature.
