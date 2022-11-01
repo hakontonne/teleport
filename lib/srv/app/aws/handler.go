@@ -168,17 +168,11 @@ func (s *SigningService) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func (s *SigningService) formatForwardResponseError(rw http.ResponseWriter, r *http.Request, err error) {
-	switch trace.Unwrap(err).(type) {
-	case *trace.BadParameterError:
-		s.Log.Debugf("Failed to process request: %v.", err)
-		rw.WriteHeader(http.StatusBadRequest)
-	case *trace.AccessDeniedError:
-		s.Log.Infof("Failed to process request: %v.", err)
-		rw.WriteHeader(http.StatusForbidden)
-	default:
-		s.Log.Warnf("Failed to process request: %v.", err)
-		rw.WriteHeader(http.StatusInternalServerError)
-	}
+	s.Log.Warnf("Failed to process request: %v.", err)
+
+	// Covert trace error type to HTTP and write response.
+	code := trace.ErrorToCode(err)
+	http.Error(rw, http.StatusText(code), code)
 }
 
 // prepareSignedRequest creates a new HTTP request and rewrites the header from the original request and returns a new
