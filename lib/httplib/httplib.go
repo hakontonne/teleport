@@ -248,7 +248,7 @@ func (r *ResponseStatusRecorder) Flush() {
 	}
 }
 
-func (r *ResponseStatusRecorder) GetStatus() int {
+func (r *ResponseStatusRecorder) Status() int {
 	// http.ResponseWriter implicitly sets StatusOK, if WriteHeader hasn't been
 	// explicitly called.
 	if r.status == 0 {

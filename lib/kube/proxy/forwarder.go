@@ -1529,7 +1529,7 @@ func (f *Forwarder) catchAll(ctx *authContext, w http.ResponseWriter, req *http.
 		},
 		RequestPath:               req.URL.Path,
 		Verb:                      req.Method,
-		ResponseCode:              int32(rw.GetStatus()),
+		ResponseCode:              int32(rw.Status()),
 		KubernetesClusterMetadata: ctx.eventClusterMeta(),
 	}
 	r := parseResourcePath(req.URL.Path)
