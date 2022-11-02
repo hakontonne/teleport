@@ -17,9 +17,6 @@ limitations under the License.
 package common
 
 import (
-	"context"
-	"net/http"
-
 	"github.com/gravitational/trace"
 
 	"github.com/gravitational/teleport/api/types"
@@ -54,29 +51,3 @@ func (sc *SessionContext) Check() error {
 	}
 	return nil
 }
-
-// WithSessionContext adds session context to provided request.
-func WithSessionContext(r *http.Request, sessionCtx *SessionContext) *http.Request {
-	return r.WithContext(context.WithValue(
-		r.Context(),
-		contextSessionKey,
-		sessionCtx,
-	))
-}
-
-// GetSessionContext retrieves the session context from a request.
-func GetSessionContext(r *http.Request) (*SessionContext, error) {
-	sessionCtxValue := r.Context().Value(contextSessionKey)
-	sessionCtx, ok := sessionCtxValue.(*SessionContext)
-	if !ok {
-		return nil, trace.BadParameter("failed to get session context")
-	}
-	return sessionCtx, nil
-}
-
-type contextKey string
-
-const (
-	// contextSessionKey is the context key for the session context.
-	contextSessionKey contextKey = "app-session-context"
-)
