@@ -48,6 +48,9 @@ type AccessChecker interface {
 	// CheckAccess checks access to the specified resource.
 	CheckAccess(r AccessCheckable, mfa AccessMFAParams, matchers ...RoleMatcher) error
 
+	// CheckAccessToNode checks login access to a given node.
+	CheckLoginAccessToNode(r types.Server, login string, mfa AccessMFAParams, matchers ...RoleMatcher) error
+
 	// CheckAccessToRemoteCluster checks access to remote cluster
 	CheckAccessToRemoteCluster(cluster types.RemoteCluster) error
 
@@ -262,6 +265,15 @@ func NewAccessChecker(info *AccessInfo, localCluster string, access RoleGetter) 
 	}, nil
 }
 
+func blendAccessDecision(a, b predicate.AccessDecision) error {
+	// Allow access if at least one checks pass AND no one responds with an explicity deny. Access if granted if one allows and the other is undecided.
+	if a != predicate.AccessDenied && b != predicate.AccessDenied && (b == predicate.AccessAllowed || a == predicate.AccessAllowed) {
+		return nil
+	}
+
+	return trace.AccessDenied("access denied")
+}
+
 // NewAccessCheckerWithRoleSet is similar to NewAccessChecker, but accepts the
 // full RoleSet rather than a RoleGetter.
 func NewAccessCheckerWithRoleSet(info *AccessInfo, localCluster string, roleSet RoleSet) AccessChecker {
@@ -337,12 +349,36 @@ func (a *accessChecker) CheckAccess(r AccessCheckable, mfa AccessMFAParams, matc
 		return trace.Wrap(err)
 	}
 
-	// Allow access if at least one checks pass AND no one responds with an explicity deny. Access if granted if one allows and the other is undecided.
-	if hasStandardAccess != predicate.AccessDenied && hasPredicateAccess != predicate.AccessDenied && (hasPredicateAccess == predicate.AccessAllowed || hasStandardAccess == predicate.AccessAllowed) {
-		return nil
+	return blendAccessDecision(hasPredicateAccess, hasStandardAccess)
+}
+
+// CheckLoginAccessToNode checks login access to a given node.
+func (a *accessChecker) CheckLoginAccessToNode(r types.Server, login string, mfa AccessMFAParams, matchers ...RoleMatcher) error {
+	if err := a.checkAllowedResources(r); err != nil {
+		return trace.Wrap(err)
 	}
 
-	return trace.AccessDenied("access denied")
+	hasStandardAccess, err := a.RoleSet.checkAccess(r, mfa, matchers...)
+	if !trace.IsAccessDenied(err) {
+		return trace.Wrap(err)
+	}
+
+	hasPredicateAccess, err := a.PredicateAccessChecker.CheckLoginAccessToNode(&predicate.Node{
+		Namespace: defaults.Namespace,
+		Login:     login,
+		Labels:    r.GetAllLabels(),
+	}, &predicate.User{
+		Name:      a.info.Name,
+		Roles:     a.info.Roles,
+		Policies:  a.info.AccessPolicies,
+		SSHLogins: a.info.Logins,
+		Traits:    a.info.Traits,
+	})
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	return blendAccessDecision(hasPredicateAccess, hasStandardAccess)
 }
 
 // GetAllowedResourceIDs returns the list of allowed resources the identity for
@@ -378,15 +414,23 @@ func AccessInfoFromLocalCertificate(cert *ssh.Certificate) (*AccessInfo, error) 
 		return nil, trace.Wrap(err)
 	}
 
+	accessPolicies, err := ExtractAccessPoliciesFromCert(cert)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
 	allowedResourceIDs, err := ExtractAllowedResourcesFromCert(cert)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
 	return &AccessInfo{
+		Name:               cert.KeyId,
+		Logins:             cert.ValidPrincipals,
 		Roles:              roles,
 		Traits:             traits,
 		AllowedResourceIDs: allowedResourceIDs,
+		AccessPolicies:     accessPolicies,
 	}, nil
 }
 

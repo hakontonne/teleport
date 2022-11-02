@@ -5154,8 +5154,10 @@ func (a *ServerWithRoles) CreatePolicy(ctx context.Context, policy types.AccessP
 
 // GetAccessPolicy fetches a policy resource by name.
 func (a *ServerWithRoles) GetAccessPolicy(ctx context.Context, name string) (types.AccessPolicy, error) {
-	if err := a.action(apidefaults.Namespace, types.KindAccessPolicy, types.VerbRead); err != nil && a.serverAction() != nil {
-		return nil, trace.Wrap(err)
+	if a.serverAction() != nil {
+		if err := a.action(apidefaults.Namespace, types.KindAccessPolicy, types.VerbRead); err != nil {
+			return nil, trace.Wrap(err)
+		}
 	}
 
 	return a.authServer.GetAccessPolicy(ctx, name)
@@ -5163,8 +5165,10 @@ func (a *ServerWithRoles) GetAccessPolicy(ctx context.Context, name string) (typ
 
 // GetAccessPolicies lists policies in the cluster
 func (a *ServerWithRoles) GetAccessPolicies(ctx context.Context) ([]types.AccessPolicy, error) {
-	if err := a.action(apidefaults.Namespace, types.KindAccessPolicy, types.VerbList); err != nil && a.serverAction() != nil {
-		return nil, trace.Wrap(err)
+	if a.serverAction() != nil {
+		if err := a.action(apidefaults.Namespace, types.KindAccessPolicy, types.VerbList); err != nil {
+			return nil, trace.Wrap(err)
+		}
 	}
 
 	return a.authServer.GetAccessPolicies(ctx)

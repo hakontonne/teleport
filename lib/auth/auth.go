@@ -1310,6 +1310,7 @@ func (a *Server) generateUserCert(req certRequest) (*proto.Certs, error) {
 		AllowedLogins:          allowedLogins,
 		TTL:                    sessionTTL,
 		Roles:                  req.checker.RoleNames(),
+		AccessPolicies:         req.user.GetAccessPolicies(),
 		CertificateFormat:      certificateFormat,
 		PermitPortForwarding:   req.checker.CanPortForward(),
 		PermitAgentForwarding:  req.checker.CanForwardAgents(),

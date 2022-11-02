@@ -549,8 +549,9 @@ func (h *AuthHandlers) canLoginWithRBAC(cert *ssh.Certificate, clusterName strin
 	node := h.c.Server.GetInfo()
 
 	// check if roles allow access to server
-	if err := accessChecker.CheckAccess(
+	if err := accessChecker.CheckLoginAccessToNode(
 		node,
+		osUser,
 		mfaParams,
 		services.NewLoginMatcher(osUser),
 	); err != nil {
