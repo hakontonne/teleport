@@ -38,6 +38,22 @@ type SessionContext struct {
 	Audit Audit
 }
 
+func (sc *SessionContext) Check() error {
+	if sc.Identity == nil {
+		return trace.BadParameter("missing Identity")
+	}
+	if sc.App == nil {
+		return trace.BadParameter("missing App")
+	}
+	if sc.ChunkID == "" {
+		return trace.BadParameter("missing ChunkID")
+	}
+	if sc.Audit == nil {
+		return trace.BadParameter("missing Audit")
+	}
+	return nil
+}
+
 // WithSessionContext adds session context to provided request.
 func WithSessionContext(r *http.Request, sessionCtx *SessionContext) *http.Request {
 	return r.WithContext(context.WithValue(
