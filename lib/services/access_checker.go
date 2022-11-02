@@ -25,6 +25,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/gravitational/teleport/api/constants"
+	"github.com/gravitational/teleport/api/defaults"
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/api/types/wrappers"
 	"github.com/gravitational/teleport/api/utils/keys"
@@ -195,10 +196,14 @@ type AccessChecker interface {
 // host SSH certificate, TLS certificate, or user information stored in the
 // backend.
 type AccessInfo struct {
+	// Name is the name of the user.
+	Name string
 	// Roles is the list of cluster local roles for the identity.
 	Roles []string
 	// AccessPolicies is a list of policies (Teleport access policies) encoded in the identity
 	AccessPolicies []string
+	// Logins is a list of valid OS logins.
+	Logins []string
 	// Traits is the set of traits for the identity.
 	Traits wrappers.Traits
 	// AllowedResourceIDs is the list of resource IDs the identity is allowed to
@@ -317,7 +322,17 @@ func (a *accessChecker) CheckAccess(r AccessCheckable, mfa AccessMFAParams, matc
 		return trace.Wrap(err)
 	}
 
-	hasPredicateAccess, err := a.PredicateAccessChecker.CheckAccessToResource(nil, nil)
+	hasPredicateAccess, err := a.PredicateAccessChecker.CheckAccessToResource(&predicate.Resource{
+		Namespace: defaults.Namespace,
+		Kind:      r.GetKind(),
+		Labels:    r.GetAllLabels(),
+	}, &predicate.User{
+		Name:      a.info.Name,
+		Roles:     a.info.Roles,
+		Policies:  a.info.AccessPolicies,
+		SSHLogins: a.info.Logins,
+		Traits:    a.info.Traits,
+	})
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -448,8 +463,10 @@ func AccessInfoFromLocalIdentity(identity tlsca.Identity, access UserGetter) (*A
 	}
 
 	return &AccessInfo{
+		Name:               identity.Username,
 		Roles:              roles,
 		AccessPolicies:     identity.AccessPolicies,
+		Logins:             identity.Principals,
 		Traits:             traits,
 		AllowedResourceIDs: allowedResourceIDs,
 	}, nil
