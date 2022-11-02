@@ -32,16 +32,16 @@ import (
 	awsutils "github.com/gravitational/teleport/lib/utils/aws"
 )
 
-// awsSignerHandler is an http.Handler for signing and forwarding requests to AWS API.
-type awsSignerHandler struct {
+// signerHandler is an http.Handler for signing and forwarding requests to AWS API.
+type signerHandler struct {
 	// fwd is a Forwarder used to forward signed requests to AWS API.
 	fwd *forward.Forwarder
 	// AwsSignerHandlerConfig is the awsSignerHandler configuration.
-	AwsSignerHandlerConfig
+	SignerHandlerConfig
 }
 
-// AwsSignerHandlerConfig is the awsSignerHandler configuration.
-type AwsSignerHandlerConfig struct {
+// SignerHandlerConfig is the awsSignerHandler configuration.
+type SignerHandlerConfig struct {
 	// Log is a logger for the handler.
 	Log logrus.FieldLogger
 	// RoundTripper is an http.RoundTripper instance used for requests.
@@ -51,7 +51,7 @@ type AwsSignerHandlerConfig struct {
 }
 
 // CheckAndSetDefaults validates the AwsSignerHandlerConfig.
-func (cfg *AwsSignerHandlerConfig) CheckAndSetDefaults() error {
+func (cfg *SignerHandlerConfig) CheckAndSetDefaults() error {
 	if cfg.SigningService == nil {
 		return trace.BadParameter("missing SigningService")
 	}
@@ -75,13 +75,13 @@ func (cfg *AwsSignerHandlerConfig) CheckAndSetDefaults() error {
 }
 
 // NewAWSSignerHandler creates a new request handler for signing and forwarding requests to AWS API.
-func NewAWSSignerHandler(config AwsSignerHandlerConfig) (http.Handler, error) {
+func NewAWSSignerHandler(config SignerHandlerConfig) (http.Handler, error) {
 	if err := config.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	handler := &awsSignerHandler{
-		AwsSignerHandlerConfig: config,
+	handler := &signerHandler{
+		SignerHandlerConfig: config,
 	}
 	fwd, err := forward.New(
 		forward.RoundTripper(config.RoundTripper),
@@ -96,7 +96,7 @@ func NewAWSSignerHandler(config AwsSignerHandlerConfig) (http.Handler, error) {
 }
 
 // formatForwardResponseError converts an error to a status code and writes the code to a response.
-func (s *awsSignerHandler) formatForwardResponseError(rw http.ResponseWriter, r *http.Request, err error) {
+func (s *signerHandler) formatForwardResponseError(rw http.ResponseWriter, r *http.Request, err error) {
 	// Convert trace error type to HTTP and write response.
 	code := trace.ErrorToCode(err)
 	s.Log.WithError(err).Debugf("Failed to process request. Response status code: %v.", code)
@@ -104,7 +104,7 @@ func (s *awsSignerHandler) formatForwardResponseError(rw http.ResponseWriter, r 
 }
 
 // ServeHTTP handles incoming requests by signing them and then forwarding them to the proper AWS API.
-func (s *awsSignerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *signerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	signedReq, payload, endpoint, err := s.SignRequest(r,
 		awsutils.SigningCtx{
 			Expiry:        s.Identity.Expires,

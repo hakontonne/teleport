@@ -66,8 +66,6 @@ func dynamoRequest(url string, provider client.ConfigProvider) error {
 	return err
 }
 
-func checks(chs ...require.ErrorAssertionFunc) []require.ErrorAssertionFunc { return chs }
-
 func hasStatusCode(wantStatusCode int) require.ErrorAssertionFunc {
 	return func(t require.TestingT, err error, msgAndArgs ...interface{}) {
 		var apiErr awserr.RequestFailure
@@ -289,7 +287,7 @@ func createSuite(t *testing.T, mockAWS http.HandlerFunc, app types.Application) 
 		Audit:    audit,
 		ChunkID:  "123abc",
 	}
-	signerHandler, err := NewAWSSignerHandler(AwsSignerHandlerConfig{
+	signerHandler, err := NewAWSSignerHandler(SignerHandlerConfig{
 		SigningService: svc,
 		SessionContext: sessionCtx,
 		RoundTripper: &http.Transport{
