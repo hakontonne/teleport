@@ -207,7 +207,7 @@ func (s *Server) withJWTTokenForwarder(ctx context.Context, sess *sessionChunk, 
 
 // withAWSSigner is a sessionOpt that uses an AWS signing service handler.
 func (s *Server) withAWSSigner(_ context.Context, sess *sessionChunk, sessionCtx *common.SessionContext) error {
-	handler, err := appaws.NewAWSSignerHandler(appaws.AwsSignerHandlerConfig{
+	handler, err := appaws.NewAWSSignerHandler(appaws.SignerHandlerConfig{
 		SigningService: s.awsSigner,
 		SessionContext: sessionCtx,
 	})
