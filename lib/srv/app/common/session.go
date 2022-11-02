@@ -38,6 +38,7 @@ type SessionContext struct {
 	Audit Audit
 }
 
+// Check validates the SessionContext.
 func (sc *SessionContext) Check() error {
 	if sc.Identity == nil {
 		return trace.BadParameter("missing Identity")

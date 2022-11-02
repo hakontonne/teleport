@@ -124,6 +124,7 @@ func endpointsIDFromSigningName(signingName string) string {
 	return signingName
 }
 
+// IsDynamoDBEndpoint determines if the resolved endpoint is for an AWS DynamoDB API.
 func IsDynamoDBEndpoint(re *endpoints.ResolvedEndpoint) bool {
 	// Some clients may sign some services with upper case letters. We use all
 	// lower cases in our mapping.

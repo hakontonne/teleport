@@ -90,6 +90,20 @@ type SigningCtx struct {
 
 // SignRequest creates a new HTTP request and rewrites the header from the original request and returns a new
 // HTTP request signed by STS AWS API.
+// Signing steps:
+// 1) Decode Authorization Header. Authorization Header example:
+//
+//		Authorization: AWS4-HMAC-SHA256
+//		Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,
+//		SignedHeaders=host;range;x-amz-date,
+//		Signature=fe5f80f77d5fa3beca038a248ff027d0445342fe2855ddc963176630326f1024
+//
+//	 2. Extract credential section from credential Authorization Header.
+//	 3. Extract aws-region and aws-service from the credential section.
+//	 4. Build AWS API endpoint based on extracted aws-region and aws-service fields.
+//	    Not that for endpoint resolving the https://github.com/aws/aws-sdk-go/aws/endpoints/endpoints.go
+//	    package is used and when Amazon releases a new API the dependency update is needed.
+//	 5. Sign HTTP request.
 func (s *SigningService) SignRequest(req *http.Request, sc SigningCtx) (*http.Request, []byte, *endpoints.ResolvedEndpoint, error) {
 	payload, err := GetAndReplaceReqBody(req)
 	if err != nil {

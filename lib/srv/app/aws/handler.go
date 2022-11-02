@@ -32,12 +32,17 @@ import (
 	awsutils "github.com/gravitational/teleport/lib/utils/aws"
 )
 
+// awsSignerHandler is an http.Handler for signing and forwarding requests to AWS API.
 type awsSignerHandler struct {
+	// fwd is a Forwarder used to forward signed requests to AWS API.
 	fwd *forward.Forwarder
+	// AwsSignerHandlerConfig is the awsSignerHandler configuration.
 	AwsSignerHandlerConfig
 }
 
+// AwsSignerHandlerConfig is the awsSignerHandler configuration.
 type AwsSignerHandlerConfig struct {
+	// Log is a logger for the handler.
 	Log logrus.FieldLogger
 	// RoundTripper is an http.RoundTripper instance used for requests.
 	RoundTripper http.RoundTripper
@@ -45,6 +50,7 @@ type AwsSignerHandlerConfig struct {
 	*common.SessionContext
 }
 
+// CheckAndSetDefaults validates the AwsSignerHandlerConfig.
 func (cfg *AwsSignerHandlerConfig) CheckAndSetDefaults() error {
 	if cfg.SigningService == nil {
 		return trace.BadParameter("missing SigningService")
@@ -68,6 +74,7 @@ func (cfg *AwsSignerHandlerConfig) CheckAndSetDefaults() error {
 	return nil
 }
 
+// NewAWSSignerHandler creates a new request handler for signing and forwarding requests to AWS API.
 func NewAWSSignerHandler(config AwsSignerHandlerConfig) (http.Handler, error) {
 	if err := config.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
@@ -88,6 +95,7 @@ func NewAWSSignerHandler(config AwsSignerHandlerConfig) (http.Handler, error) {
 	return handler, nil
 }
 
+// formatForwardResponseError converts an error to a status code and writes the code to a response.
 func (s *awsSignerHandler) formatForwardResponseError(rw http.ResponseWriter, r *http.Request, err error) {
 	// Convert trace error type to HTTP and write response.
 	code := trace.ErrorToCode(err)
@@ -95,22 +103,7 @@ func (s *awsSignerHandler) formatForwardResponseError(rw http.ResponseWriter, r 
 	rw.WriteHeader(code)
 }
 
-// ServeHTTP handles incoming requests and forwards them to the proper AWS API.
-// Handling steps:
-// 1) Decode Authorization Header. Authorization Header example:
-//
-//		Authorization: AWS4-HMAC-SHA256
-//		Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,
-//		SignedHeaders=host;range;x-amz-date,
-//		Signature=fe5f80f77d5fa3beca038a248ff027d0445342fe2855ddc963176630326f1024
-//
-//	 2. Extract credential section from credential Authorization Header.
-//	 3. Extract aws-region and aws-service from the credential section.
-//	 4. Build AWS API endpoint based on extracted aws-region and aws-service fields.
-//	    Not that for endpoint resolving the https://github.com/aws/aws-sdk-go/aws/endpoints/endpoints.go
-//	    package is used and when Amazon releases a new API the dependency update is needed.
-//	 5. Sign HTTP request.
-//	 6. Forward the signed HTTP request to the AWS API.
+// ServeHTTP handles incoming requests by signing them and then forwarding them to the proper AWS API.
 func (s *awsSignerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	signedReq, payload, endpoint, err := s.SignRequest(r,
 		awsutils.SigningCtx{
