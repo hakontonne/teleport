@@ -88,8 +88,6 @@ type AuthHandlerConfig struct {
 	// for TLS certificate verification.
 	// Defaults to real clock if unspecified
 	Clock clockwork.Clock
-
-	Auth auth.ClientI
 }
 
 // AuthHandlers are common authorization and authentication related handlers
