@@ -104,8 +104,10 @@ func (s *signerHandler) formatForwardResponseError(rw http.ResponseWriter, r *ht
 }
 
 // ServeHTTP handles incoming requests by signing them and then forwarding them to the proper AWS API.
-func (s *signerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	signedReq, payload, endpoint, err := s.SignRequest(r,
+func (s *signerHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// rewrite headers before signing the request to avoid signature validation problems.
+	reqCopy := rewriteHeaders(req)
+	signedReq, payload, endpoint, err := s.SignRequest(reqCopy,
 		awsutils.SigningCtx{
 			Expiry:        s.Identity.Expires,
 			SessionName:   s.Identity.Username,
@@ -113,19 +115,35 @@ func (s *signerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			AWSExternalID: s.App.GetAWSExternalID(),
 		})
 	if err != nil {
-		s.formatForwardResponseError(w, r, err)
+		s.formatForwardResponseError(w, reqCopy, err)
 		return
 	}
 	recorder := httplib.NewResponseStatusRecorder(w)
 	s.fwd.ServeHTTP(recorder, signedReq)
-	// emit audit event with original request, but change the URL since we resolved and rewrote it.
+	// set the signed request body again for further processing, since ServeHTTP should have closed it.
 	signedReq.Body = io.NopCloser(bytes.NewReader(payload))
 	if awsutils.IsDynamoDBEndpoint(endpoint) {
-		err = s.Audit.OnDynamoDBRequest(r.Context(), s.SessionContext, signedReq, recorder.Status(), endpoint)
+		err = s.Audit.OnDynamoDBRequest(reqCopy.Context(), s.SessionContext, signedReq, recorder.Status(), endpoint)
 	} else {
-		err = s.Audit.OnRequest(r.Context(), s.SessionContext, signedReq, recorder.Status(), endpoint)
+		err = s.Audit.OnRequest(reqCopy.Context(), s.SessionContext, signedReq, recorder.Status(), endpoint)
 	}
 	if err != nil {
 		s.Log.WithError(err).Warn("Failed to emit audit event.")
 	}
+}
+
+// rewriteHeaders returns a shallow copy of a request with a deep copy of rewritten headers.
+func rewriteHeaders(r *http.Request) *http.Request {
+	// shallow copy request and make a deep copy for header modification.
+	reqCopy := &http.Request{}
+	*reqCopy = *r
+	reqCopy.Header = r.Header.Clone()
+
+	for key := range reqCopy.Header {
+		// Remove Teleport app headers.
+		if common.IsReservedHeader(key) || http.CanonicalHeaderKey(key) == "Content-Length" {
+			reqCopy.Header.Del(key)
+		}
+	}
+	return reqCopy
 }

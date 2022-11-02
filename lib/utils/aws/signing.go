@@ -118,7 +118,7 @@ func (s *SigningService) SignRequest(req *http.Request, sc SigningCtx) (*http.Re
 	if err != nil {
 		return nil, nil, nil, trace.Wrap(err)
 	}
-	rewriteHeaders(req, reqCopy)
+	reqCopy.Header = req.Header.Clone()
 	credentials := s.GetSigningCredentials(s.Session, sc.Expiry, sc.SessionName, sc.AWSRoleArn, sc.AWSExternalID)
 	signer := NewSigner(credentials, re.SigningName)
 	_, err = signer.Sign(reqCopy, bytes.NewReader(payload), re.SigningName, re.SigningRegion, s.Clock.Now())
@@ -126,19 +126,6 @@ func (s *SigningService) SignRequest(req *http.Request, sc SigningCtx) (*http.Re
 		return nil, nil, nil, trace.Wrap(err)
 	}
 	return reqCopy, payload, re, nil
-}
-
-func rewriteHeaders(r *http.Request, reqCopy *http.Request) {
-	for key, values := range r.Header {
-		// Remove Teleport app headers.
-		// if common.IsReservedHeader(key) {
-		// 	continue
-		// }
-		for _, v := range values {
-			reqCopy.Header.Add(key, v)
-		}
-	}
-	reqCopy.Header.Del("Content-Length")
 }
 
 type getSigningCredentialsFunc func(provider client.ConfigProvider, expiry time.Time, sessName, roleARN, externalID string) *credentials.Credentials
