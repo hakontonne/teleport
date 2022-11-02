@@ -29,6 +29,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gravitational/trace"
+	"github.com/jonboulle/clockwork"
+	"github.com/sirupsen/logrus"
+
 	"github.com/gravitational/teleport"
 	apidefaults "github.com/gravitational/teleport/api/defaults"
 	"github.com/gravitational/teleport/api/types"
@@ -41,16 +45,10 @@ import (
 	"github.com/gravitational/teleport/lib/reversetunnel"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/srv"
-	appaws "github.com/gravitational/teleport/lib/srv/app/aws"
 	"github.com/gravitational/teleport/lib/srv/app/common"
 	"github.com/gravitational/teleport/lib/tlsca"
 	"github.com/gravitational/teleport/lib/utils"
 	"github.com/gravitational/teleport/lib/utils/aws"
-
-	"github.com/gravitational/trace"
-
-	"github.com/jonboulle/clockwork"
-	"github.com/sirupsen/logrus"
 )
 
 // Config is the configuration for an application server.
@@ -193,7 +191,7 @@ type Server struct {
 
 	cache *sessionChunkCache
 
-	awsSigner *appaws.SigningService
+	awsSigner *aws.SigningService
 
 	// watcher monitors changes to application resources.
 	watcher *services.AppWatcher
@@ -235,7 +233,7 @@ func New(ctx context.Context, c *Config) (*Server, error) {
 		return nil, trace.Wrap(err)
 	}
 
-	awsSigner, err := appaws.NewSigningService(appaws.SigningServiceConfig{})
+	awsSigner, err := aws.NewSigningService(aws.SigningServiceConfig{})
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -672,7 +670,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 		//  services that support it (All services expect Amazon SimpleDB but
 		//  this AWS service has been deprecated)
 		if aws.IsSignedByAWSSigV4(r) {
-			return s.serveSession(w, r, identity, app, s.withAWSForwarder)
+			return s.serveSession(w, r, identity, app, s.withAWSSigner)
 		}
 
 		// Request for AWS console access originated from Teleport Proxy WebUI
@@ -715,7 +713,8 @@ func (s *Server) serveSession(w http.ResponseWriter, r *http.Request, identity *
 	defer session.release()
 
 	// Forward request to the target application.
-	session.fwd.ServeHTTP(w, common.WithSessionContext(r, session.sessionCtx))
+	session.handler.ServeHTTP(w, r)
+	// session.fwd.ServeHTTP(w, common.WithSessionContext(r, session.sessionCtx))
 	return nil
 }
 
