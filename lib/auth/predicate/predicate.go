@@ -22,6 +22,14 @@ import (
 	"github.com/vulcand/predicate"
 )
 
+type AccessDecision int
+
+const (
+	AccessUndecided AccessDecision = iota
+	AccessAllowed
+	AccessDenied
+)
+
 // NamedParameter is an object with a name that can be added to the environment in which a predicate expression runs.
 type NamedParameter interface {
 	// GetName returns the name of the object.
@@ -90,23 +98,23 @@ func NewPredicateAccessChecker(policies []types.AccessPolicy) *PredicateAccessCh
 }
 
 // CheckAccessToNode checks if a given user has login access to a Server Access node.
-func (c *PredicateAccessChecker) CheckLoginAccessToNode(node *Node, user *User) (bool, error) {
+func (c *PredicateAccessChecker) CheckLoginAccessToNode(node *Node, user *User) (AccessDecision, error) {
 	env := buildEnv(node, user)
 	return c.checkPolicyExprs("node", env)
 }
 
 // CheckAccessToResource checks if a given user has access to view a resource.
-func (c *PredicateAccessChecker) CheckAccessToResource(resource *Resource, user *User) (bool, error) {
+func (c *PredicateAccessChecker) CheckAccessToResource(resource *Resource, user *User) (AccessDecision, error) {
 	env := buildEnv(resource, user)
 	return c.checkPolicyExprs("resource", env)
 }
 
 // checkPolicyExprs is the internal routine that evaluates expressions in a given scope from all policies
 // with a provided execution environment containing input values.
-func (c *PredicateAccessChecker) checkPolicyExprs(scope string, env map[string]any) (bool, error) {
+func (c *PredicateAccessChecker) checkPolicyExprs(scope string, env map[string]any) (AccessDecision, error) {
 	parser, err := newParser(env)
 	if err != nil {
-		return false, trace.Wrap(err)
+		return AccessUndecided, trace.Wrap(err)
 	}
 
 	evaluate := func(expr string) (bool, error) {
@@ -127,11 +135,11 @@ func (c *PredicateAccessChecker) checkPolicyExprs(scope string, env map[string]a
 		if expr, ok := policy.GetDeny()[scope]; ok {
 			denied, err := evaluate(expr)
 			if err != nil {
-				return false, trace.Wrap(err)
+				return AccessUndecided, trace.Wrap(err)
 			}
 
 			if denied {
-				return false, nil
+				return AccessDenied, nil
 			}
 		}
 	}
@@ -140,16 +148,16 @@ func (c *PredicateAccessChecker) checkPolicyExprs(scope string, env map[string]a
 		if expr, ok := policy.GetAllow()[scope]; ok {
 			allowed, err := evaluate(expr)
 			if err != nil {
-				return false, trace.Wrap(err)
+				return AccessUndecided, trace.Wrap(err)
 			}
 
 			if allowed {
-				return true, nil
+				return AccessAllowed, nil
 			}
 		}
 	}
 
-	return false, nil
+	return AccessUndecided, nil
 }
 
 // Resource describes an arbitrary resource that can be viewed and listed.

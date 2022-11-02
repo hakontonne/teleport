@@ -311,7 +311,18 @@ func (a *accessChecker) CheckAccess(r AccessCheckable, mfa AccessMFAParams, matc
 	if err := a.checkAllowedResources(r); err != nil {
 		return trace.Wrap(err)
 	}
-	return trace.Wrap(a.RoleSet.checkAccess(r, mfa, matchers...))
+
+	hasStandardAccess := a.RoleSet.checkAccess(r, mfa, matchers...)
+	if !trace.IsAccessDenied(hasStandardAccess) {
+		return trace.Wrap(hasStandardAccess)
+	}
+
+	hasPredicateAccess, err := a.PredicateAccessChecker.CheckAccessToResource(nil, nil)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	return trace.AccessDenied("access denied")
 }
 
 // GetAllowedResourceIDs returns the list of allowed resources the identity for

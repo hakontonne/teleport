@@ -33,6 +33,7 @@ import (
 	"github.com/gravitational/teleport/api/types/wrappers"
 	apiutils "github.com/gravitational/teleport/api/utils"
 	"github.com/gravitational/teleport/api/utils/keys"
+	predicateEngine "github.com/gravitational/teleport/lib/auth/predicate"
 	"github.com/gravitational/teleport/lib/tlsca"
 	"github.com/gravitational/teleport/lib/utils"
 	"github.com/gravitational/teleport/lib/utils/parse"
@@ -1989,7 +1990,7 @@ func rbacDebugLogger() (debugEnabled bool, debugf func(format string, args ...in
 
 // checkAccess checks if this role set has access to a particular resource,
 // optionally matching the resource's labels.
-func (set RoleSet) checkAccess(r AccessCheckable, mfa AccessMFAParams, matchers ...RoleMatcher) error {
+func (set RoleSet) checkAccess(r AccessCheckable, mfa AccessMFAParams, matchers ...RoleMatcher) (predicateEngine.AccessDecision, error) {
 	// Note: logging in this function only happens in debug mode. This is because
 	// adding logging to this function (which is called on every resource returned
 	// by the backend) can slow down this function by 50x for large clusters!
@@ -1997,7 +1998,7 @@ func (set RoleSet) checkAccess(r AccessCheckable, mfa AccessMFAParams, matchers 
 
 	if mfa.Required == MFARequiredAlways && !mfa.Verified {
 		debugf("Access to %v %q denied, cluster requires per-session MFA", r.GetKind(), r.GetName())
-		return ErrSessionMFARequired
+		return predicateEngine.AccessDenied, ErrSessionMFARequired
 	}
 
 	namespace := types.ProcessNamespace(r.GetMetadata().Namespace)
@@ -2026,7 +2027,7 @@ func (set RoleSet) checkAccess(r AccessCheckable, mfa AccessMFAParams, matchers 
 	case types.KindWindowsDesktopService:
 		getRoleLabels = types.Role.GetWindowsDesktopLabels
 	default:
-		return trace.BadParameter("cannot match labels for kind %v", r.GetKind())
+		return predicateEngine.AccessUndecided, trace.BadParameter("cannot match labels for kind %v", r.GetKind())
 	}
 
 	// Check deny rules.
@@ -2038,12 +2039,12 @@ func (set RoleSet) checkAccess(r AccessCheckable, mfa AccessMFAParams, matchers 
 
 		matchLabels, labelsMessage, err := MatchLabels(getRoleLabels(role, types.Deny), allLabels)
 		if err != nil {
-			return trace.Wrap(err)
+			return predicateEngine.AccessUndecided, trace.Wrap(err)
 		}
 		if matchLabels {
 			debugf("Access to %v %q denied, deny rule in role %q matched; match(namespace=%v, label=%v)",
 				r.GetKind(), r.GetName(), role.GetName(), namespaceMessage, labelsMessage)
-			return trace.AccessDenied("access to %v denied. User does not have permissions. %v",
+			return predicateEngine.AccessUndecided, trace.AccessDenied("access to %v denied. User does not have permissions. %v",
 				r.GetKind(), additionalDeniedMessage)
 		}
 
@@ -2051,12 +2052,12 @@ func (set RoleSet) checkAccess(r AccessCheckable, mfa AccessMFAParams, matchers 
 		// at least one of the matchers returns true.
 		matchMatchers, matchersMessage, err := RoleMatchers(matchers).MatchAny(role, types.Deny)
 		if err != nil {
-			return trace.Wrap(err)
+			return predicateEngine.AccessUndecided, trace.Wrap(err)
 		}
 		if matchMatchers {
 			debugf("Access to %v %q denied, deny rule in role %q matched; match(matcher=%v)",
 				r.GetKind(), r.GetName(), role.GetName(), matchersMessage)
-			return trace.AccessDenied("access to %v denied. User does not have permissions. %v",
+			return predicateEngine.AccessDenied, trace.AccessDenied("access to %v denied. User does not have permissions. %v",
 				r.GetKind(), additionalDeniedMessage)
 		}
 	}
@@ -2076,7 +2077,7 @@ func (set RoleSet) checkAccess(r AccessCheckable, mfa AccessMFAParams, matchers 
 
 		matchLabels, labelsMessage, err := MatchLabels(getRoleLabels(role, types.Allow), allLabels)
 		if err != nil {
-			return trace.Wrap(err)
+			return predicateEngine.AccessUndecided, trace.Wrap(err)
 		}
 		if !matchLabels {
 			if isDebugEnabled {
@@ -2090,7 +2091,7 @@ func (set RoleSet) checkAccess(r AccessCheckable, mfa AccessMFAParams, matchers 
 		// matchers return true.
 		matchMatchers, err := RoleMatchers(matchers).MatchAll(role, types.Allow)
 		if err != nil {
-			return trace.Wrap(err)
+			return predicateEngine.AccessUndecided, trace.Wrap(err)
 		}
 		if !matchMatchers {
 			if isDebugEnabled {
@@ -2103,13 +2104,13 @@ func (set RoleSet) checkAccess(r AccessCheckable, mfa AccessMFAParams, matchers 
 		// if we've reached this point, namespace, labels, and matchers all match.
 		// if MFA is verified or never required, we're done.
 		if mfa.Verified || mfa.Required == MFARequiredNever {
-			return nil
+			return predicateEngine.AccessAllowed, nil
 		}
 		// if MFA is not verified and we require session MFA, deny access
 		if role.GetOptions().RequireMFAType.IsSessionMFARequired() {
 			debugf("Access to %v %q denied, role %q requires per-session MFA",
 				r.GetKind(), r.GetName(), role.GetName())
-			return ErrSessionMFARequired
+			return predicateEngine.AccessDenied, ErrSessionMFARequired
 		}
 
 		// Check all remaining roles, even if we found a match.
@@ -2121,11 +2122,11 @@ func (set RoleSet) checkAccess(r AccessCheckable, mfa AccessMFAParams, matchers 
 	}
 
 	if allowed {
-		return nil
+		return predicateEngine.AccessAllowed, nil
 	}
 
 	debugf("Access to %v %q denied, no allow rule matched; %v", r.GetKind(), r.GetName(), errs)
-	return trace.AccessDenied("access to %v denied. User does not have permissions. %v",
+	return predicateEngine.AccessUndecided, trace.AccessDenied("access to %v denied. User does not have permissions. %v",
 		r.GetKind(), additionalDeniedMessage)
 }
 
