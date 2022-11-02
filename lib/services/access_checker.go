@@ -17,6 +17,7 @@ limitations under the License.
 package services
 
 import (
+	"context"
 	"time"
 
 	"github.com/gravitational/trace"
@@ -27,6 +28,7 @@ import (
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/api/types/wrappers"
 	"github.com/gravitational/teleport/api/utils/keys"
+	"github.com/gravitational/teleport/lib/auth/predicate"
 	"github.com/gravitational/teleport/lib/tlsca"
 )
 
@@ -195,6 +197,8 @@ type AccessChecker interface {
 type AccessInfo struct {
 	// Roles is the list of cluster local roles for the identity.
 	Roles []string
+	// AccessPolicies is a list of policies (Teleport access policies) encoded in the identity
+	AccessPolicies []string
 	// Traits is the set of traits for the identity.
 	Traits wrappers.Traits
 	// AllowedResourceIDs is the list of resource IDs the identity is allowed to
@@ -214,6 +218,9 @@ type accessChecker struct {
 	// to search-based access requests) will be implemented by
 	// accessChecker.
 	RoleSet
+
+	// PredicateAccessChecker is embedded to allow access checking via access policy resources.
+	*predicate.PredicateAccessChecker
 }
 
 // NewAccessChecker returns a new AccessChecker which can be used to check
@@ -231,10 +238,22 @@ func NewAccessChecker(info *AccessInfo, localCluster string, access RoleGetter) 
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+
+	policies := make([]types.AccessPolicy, 0)
+	for _, policyName := range info.AccessPolicies {
+		policy, err := access.GetAccessPolicy(context.TODO(), policyName)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+
+		policies = append(policies, policy)
+	}
+
 	return &accessChecker{
-		info:         info,
-		localCluster: localCluster,
-		RoleSet:      roleSet,
+		info:                   info,
+		localCluster:           localCluster,
+		RoleSet:                roleSet,
+		PredicateAccessChecker: predicate.NewPredicateAccessChecker(policies),
 	}, nil
 }
 
@@ -242,9 +261,10 @@ func NewAccessChecker(info *AccessInfo, localCluster string, access RoleGetter) 
 // full RoleSet rather than a RoleGetter.
 func NewAccessCheckerWithRoleSet(info *AccessInfo, localCluster string, roleSet RoleSet) AccessChecker {
 	return &accessChecker{
-		info:         info,
-		localCluster: localCluster,
-		RoleSet:      roleSet,
+		info:                   info,
+		localCluster:           localCluster,
+		RoleSet:                roleSet,
+		PredicateAccessChecker: predicate.NewPredicateAccessChecker(nil),
 	}
 }
 
@@ -413,6 +433,7 @@ func AccessInfoFromLocalIdentity(identity tlsca.Identity, access UserGetter) (*A
 
 	return &AccessInfo{
 		Roles:              roles,
+		AccessPolicies:     identity.AccessPolicies,
 		Traits:             traits,
 		AllowedResourceIDs: allowedResourceIDs,
 	}, nil

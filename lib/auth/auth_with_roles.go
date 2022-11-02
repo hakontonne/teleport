@@ -5144,7 +5144,7 @@ func (a *ServerWithRoles) MaintainSessionPresence(ctx context.Context) (proto.Au
 }
 
 // CreatePolicy creates a new policy resource.
-func (a *ServerWithRoles) CreatePolicy(ctx context.Context, policy types.Policy) error {
+func (a *ServerWithRoles) CreatePolicy(ctx context.Context, policy types.AccessPolicy) error {
 	if err := a.action(apidefaults.Namespace, types.KindAccessPolicy, types.VerbCreate); err != nil {
 		return trace.Wrap(err)
 	}
@@ -5153,7 +5153,7 @@ func (a *ServerWithRoles) CreatePolicy(ctx context.Context, policy types.Policy)
 }
 
 // GetAccessPolicy fetches a policy resource by name.
-func (a *ServerWithRoles) GetAccessPolicy(ctx context.Context, name string) (types.Policy, error) {
+func (a *ServerWithRoles) GetAccessPolicy(ctx context.Context, name string) (types.AccessPolicy, error) {
 	if err := a.action(apidefaults.Namespace, types.KindAccessPolicy, types.VerbRead); err != nil && a.serverAction() != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -5162,7 +5162,7 @@ func (a *ServerWithRoles) GetAccessPolicy(ctx context.Context, name string) (typ
 }
 
 // GetAccessPolicies lists policies in the cluster
-func (a *ServerWithRoles) GetAccessPolicies(ctx context.Context) ([]types.Policy, error) {
+func (a *ServerWithRoles) GetAccessPolicies(ctx context.Context) ([]types.AccessPolicy, error) {
 	if err := a.action(apidefaults.Namespace, types.KindAccessPolicy, types.VerbList); err != nil && a.serverAction() != nil {
 		return nil, trace.Wrap(err)
 	}

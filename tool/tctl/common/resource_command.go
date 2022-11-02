@@ -1388,7 +1388,7 @@ func (rc *ResourceCommand) getCollection(ctx context.Context, client auth.Client
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		return &policyCollection{policies: []types.Policy{policy}}, nil
+		return &policyCollection{policies: []types.AccessPolicy{policy}}, nil
 	}
 	return nil, trace.BadParameter("getting %q is not supported", rc.ref.String())
 }

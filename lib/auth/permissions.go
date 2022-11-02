@@ -94,6 +94,8 @@ type AuthorizerAccessPoint interface {
 
 	// GetSessionRecordingConfig returns session recording configuration.
 	GetSessionRecordingConfig(ctx context.Context, opts ...services.MarshalOption) (types.SessionRecordingConfig, error)
+
+	GetAccessPolicy(ctx context.Context, name string) (types.AccessPolicy, error)
 }
 
 // authorizer creates new local authorizer
@@ -790,6 +792,7 @@ func contextForLocalUser(u LocalUser, accessPoint AuthorizerAccessPoint, cluster
 	// that by extracting up to date identity traits and roles from the user's
 	// certificate metadata.
 	user.SetRoles(accessInfo.Roles)
+	user.SetAccessPolicies(accessInfo.AccessPolicies)
 	user.SetTraits(accessInfo.Traits)
 
 	return &Context{

@@ -23,8 +23,8 @@ import (
 	"github.com/gravitational/trace"
 )
 
-// AccessPolicyV1 is a predicate policy used for RBAC, similar to rule but uses predicate language.
-type Policy interface {
+// AccessPolicy is a predicate policy used for RBAC, similar to rule but uses predicate language.
+type AccessPolicy interface {
 	// Resource provides common resource properties
 	Resource
 	// GetAllow returns a list of allow expressions grouped by scope.

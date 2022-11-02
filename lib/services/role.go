@@ -687,6 +687,8 @@ func ReadNoSecrets() []string {
 type RoleGetter interface {
 	// GetRole returns role by name
 	GetRole(ctx context.Context, name string) (types.Role, error)
+
+	GetAccessPolicy(ctx context.Context, name string) (types.AccessPolicy, error)
 }
 
 // ExtractFromCertificate will extract roles and traits from a *ssh.Certificate.
