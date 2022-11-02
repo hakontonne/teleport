@@ -31,6 +31,8 @@ type Policy interface {
 	GetAllow() map[string]string
 	// GetDeny returns a list of deny expressions grouped by scope.
 	GetDeny() map[string]string
+	// GetOptions returns a map of policy option names to values.
+	GetOptions() map[string]string
 }
 
 // NewPolicy creates a new policy from a specification.
@@ -129,4 +131,9 @@ func (c *AccessPolicyV1) GetAllow() map[string]string {
 // GetDeny returns a list of deny expressions grouped by scope.
 func (c *AccessPolicyV1) GetDeny() map[string]string {
 	return c.Spec.Deny
+}
+
+// GetOptions returns a map of policy option names to values.
+func (c *AccessPolicyV1) GetOptions() map[string]string {
+	return c.Spec.Options
 }

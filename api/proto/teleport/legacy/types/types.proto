@@ -2123,6 +2123,10 @@ message AccessPolicySpecV1 {
 
   // Deny contains scopes mapping to predicate expressions as above but the expressions are instead in deny form.
   map<string, string> Deny = 2 [(gogoproto.jsontag) = "deny,omitempty"];
+
+  // Options is a map of option names to stringified point values of various types.
+  // These include general options like `per_session_mfa: bool` and `max_session_ttl: duration`.
+  map<string, string> Options = 3 [(gogoproto.jsontag) = "options,omitempty"];
 }
 
 // RoleConditions is a set of conditions that must all match to be allowed or
