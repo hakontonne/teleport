@@ -1373,6 +1373,7 @@ func (a *Server) generateUserCert(req certRequest) (*proto.Certs, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+
 	identity := tlsca.Identity{
 		Username:          req.user.GetName(),
 		Impersonator:      req.impersonator,
