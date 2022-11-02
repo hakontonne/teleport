@@ -312,8 +312,8 @@ func (s *AccessService) CreatePolicy(ctx context.Context, policy types.Policy) e
 	return nil
 }
 
-// GetPolicy fetches a policy resource by name.
-func (s *AccessService) GetPolicy(ctx context.Context, name string) (types.Policy, error) {
+// GetAccessPolicy fetches a policy resource by name.
+func (s *AccessService) GetAccessPolicy(ctx context.Context, name string) (types.Policy, error) {
 	if name == "" {
 		return nil, trace.BadParameter("missing policy name")
 	}
@@ -328,8 +328,8 @@ func (s *AccessService) GetPolicy(ctx context.Context, name string) (types.Polic
 		services.WithResourceID(item.ID), services.WithExpires(item.Expires))
 }
 
-// GetPolicies lists policies in the cluster.
-func (s *AccessService) GetPolicies(ctx context.Context) ([]types.Policy, error) {
+// GetAccessPolicies lists policies in the cluster.
+func (s *AccessService) GetAccessPolicies(ctx context.Context) ([]types.Policy, error) {
 	startKey := backend.Key(policiesPrefix, "")
 	items, err := s.GetRange(ctx, startKey, backend.RangeEnd(startKey), backend.NoLimit)
 	if err != nil {

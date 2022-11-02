@@ -550,7 +550,7 @@ func (h *AuthHandlers) canLoginWithRBAC(cert *ssh.Certificate, clusterName strin
 	mfaParams := accessChecker.MFAParams(ap.GetRequireMFAType())
 	_, mfaParams.Verified = cert.Extensions[teleport.CertExtensionMFAVerified]
 
-	policies, err := h.c.Auth.GetPolicies(ctx)
+	policies, err := h.c.Auth.GetAccessPolicies(ctx)
 	if err != nil {
 		return trace.Wrap(err)
 	}

@@ -5152,22 +5152,22 @@ func (a *ServerWithRoles) CreatePolicy(ctx context.Context, policy types.Policy)
 	return a.authServer.CreatePolicy(ctx, policy)
 }
 
-// GetPolicy fetches a policy resource by name.
-func (a *ServerWithRoles) GetPolicy(ctx context.Context, name string) (types.Policy, error) {
+// GetAccessPolicy fetches a policy resource by name.
+func (a *ServerWithRoles) GetAccessPolicy(ctx context.Context, name string) (types.Policy, error) {
 	if err := a.action(apidefaults.Namespace, types.KindAccessPolicy, types.VerbRead); err != nil && a.serverAction() != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	return a.authServer.GetPolicy(ctx, name)
+	return a.authServer.GetAccessPolicy(ctx, name)
 }
 
-// GetPolicies lists policies in the cluster
-func (a *ServerWithRoles) GetPolicies(ctx context.Context) ([]types.Policy, error) {
+// GetAccessPolicies lists policies in the cluster
+func (a *ServerWithRoles) GetAccessPolicies(ctx context.Context) ([]types.Policy, error) {
 	if err := a.action(apidefaults.Namespace, types.KindAccessPolicy, types.VerbList); err != nil && a.serverAction() != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	return a.authServer.GetPolicies(ctx)
+	return a.authServer.GetAccessPolicies(ctx)
 }
 
 // NewAdminAuthServer returns auth server authorized as admin,

@@ -57,8 +57,8 @@ type Access interface {
 
 	// CreatePolicy creates a new policy resource.
 	CreatePolicy(ctx context.Context, policy types.Policy) error
-	// GetPolicy fetches a policy resource by name.
-	GetPolicy(ctx context.Context, name string) (types.Policy, error)
-	// GetPolicies lists policies in the cluster.
-	GetPolicies(ctx context.Context) ([]types.Policy, error)
+	// GetAccessPolicy fetches a policy resource by name.
+	GetAccessPolicy(ctx context.Context, name string) (types.Policy, error)
+	// GetAccessPolicies lists policies in the cluster.
+	GetAccessPolicies(ctx context.Context) ([]types.Policy, error)
 }
