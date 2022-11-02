@@ -348,7 +348,9 @@ func (h *AuthHandlers) UserKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (*s
 		FIPS: h.c.FIPS,
 	}
 
-	permissions, knownPrincipal, err := certChecker.Authenticate(conn, key)
+	permissions, err := certChecker.Authenticate(conn, key)
+	// TODO(joel): remove standin
+	knownPrincipal := true
 	if err != nil {
 		certificateMismatchCount.Inc()
 		recordFailedLogin(err)
