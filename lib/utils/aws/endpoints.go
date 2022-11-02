@@ -52,7 +52,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/timestreamquery"
 
 	awsapiutils "github.com/gravitational/teleport/api/utils/aws"
-	awsutils "github.com/gravitational/teleport/lib/utils/aws"
 
 	"github.com/gravitational/trace"
 )
@@ -61,7 +60,7 @@ import (
 // authorization header and resolves the aws-service and aws-region to AWS
 // endpoint.
 func resolveEndpoint(r *http.Request) (*endpoints.ResolvedEndpoint, error) {
-	awsAuthHeader, err := awsutils.ParseSigV4(r.Header.Get(awsutils.AuthorizationHeader))
+	awsAuthHeader, err := ParseSigV4(r.Header.Get(AuthorizationHeader))
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -125,7 +124,7 @@ func endpointsIDFromSigningName(signingName string) string {
 	return signingName
 }
 
-func isDynamoDBEndpoint(re *endpoints.ResolvedEndpoint) bool {
+func IsDynamoDBEndpoint(re *endpoints.ResolvedEndpoint) bool {
 	// Some clients may sign some services with upper case letters. We use all
 	// lower cases in our mapping.
 	signingName := strings.ToLower(re.SigningName)
