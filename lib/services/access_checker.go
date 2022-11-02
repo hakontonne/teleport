@@ -312,14 +312,19 @@ func (a *accessChecker) CheckAccess(r AccessCheckable, mfa AccessMFAParams, matc
 		return trace.Wrap(err)
 	}
 
-	hasStandardAccess := a.RoleSet.checkAccess(r, mfa, matchers...)
-	if !trace.IsAccessDenied(hasStandardAccess) {
-		return trace.Wrap(hasStandardAccess)
+	hasStandardAccess, err := a.RoleSet.checkAccess(r, mfa, matchers...)
+	if !trace.IsAccessDenied(err) {
+		return trace.Wrap(err)
 	}
 
 	hasPredicateAccess, err := a.PredicateAccessChecker.CheckAccessToResource(nil, nil)
 	if err != nil {
 		return trace.Wrap(err)
+	}
+
+	// Allow access if at least one checks pass AND no one responds with an explicity deny. Access if granted if one allows and the other is undecided.
+	if hasStandardAccess != predicate.AccessDenied && hasPredicateAccess != predicate.AccessDenied && (hasPredicateAccess == predicate.AccessAllowed || hasStandardAccess == predicate.AccessAllowed) {
+		return nil
 	}
 
 	return trace.AccessDenied("access denied")

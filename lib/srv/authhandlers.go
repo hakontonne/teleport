@@ -32,7 +32,6 @@ import (
 	apisshutils "github.com/gravitational/teleport/api/utils/sshutils"
 	"github.com/gravitational/teleport/lib/auditd"
 	"github.com/gravitational/teleport/lib/auth"
-	"github.com/gravitational/teleport/lib/auth/predicate"
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/observability/metrics"
 	"github.com/gravitational/teleport/lib/services"
@@ -349,8 +348,6 @@ func (h *AuthHandlers) UserKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (*s
 	}
 
 	permissions, err := certChecker.Authenticate(conn, key)
-	// TODO(joel): remove standin
-	knownPrincipal := true
 	if err != nil {
 		certificateMismatchCount.Inc()
 		recordFailedLogin(err)
@@ -387,7 +384,7 @@ func (h *AuthHandlers) UserKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (*s
 	case h.c.Component == teleport.ComponentForwardingNode:
 		err = h.canLoginWithoutRBAC(cert, clusterName.GetClusterName(), teleportUser, conn.User())
 	default:
-		err = h.canLoginWithRBAC(cert, clusterName.GetClusterName(), teleportUser, conn.User(), knownPrincipal)
+		err = h.canLoginWithRBAC(cert, clusterName.GetClusterName(), teleportUser, conn.User())
 	}
 	if err != nil {
 		log.Errorf("Permission denied: %v", err)
@@ -516,7 +513,7 @@ func (h *AuthHandlers) canLoginWithoutRBAC(cert *ssh.Certificate, clusterName st
 // canLoginWithRBAC checks the given certificate (supplied by a connected
 // client) to see if this certificate can be allowed to login as user:login
 // pair to requested server and if RBAC rules allow login.
-func (h *AuthHandlers) canLoginWithRBAC(cert *ssh.Certificate, clusterName string, teleportUser, osUser string, knownPrincipal bool) error {
+func (h *AuthHandlers) canLoginWithRBAC(cert *ssh.Certificate, clusterName string, teleportUser, osUser string) error {
 	// Use the server's shutdown context.
 	ctx := h.c.Server.Context()
 
@@ -549,36 +546,7 @@ func (h *AuthHandlers) canLoginWithRBAC(cert *ssh.Certificate, clusterName strin
 	}
 	mfaParams := accessChecker.MFAParams(ap.GetRequireMFAType())
 	_, mfaParams.Verified = cert.Extensions[teleport.CertExtensionMFAVerified]
-
-	policies, err := h.c.Auth.GetAccessPolicies(ctx)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-
 	node := h.c.Server.GetInfo()
-	user, err := h.c.Auth.GetUser(teleportUser, false)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-
-	predicateAccess, err := predicate.NewPredicateAccessChecker(policies).CheckLoginAccessToNode(&predicate.Node{
-		Namespace: node.GetNamespace(),
-		Login:     osUser,
-		Labels:    node.GetAllLabels(),
-	}, &predicate.User{
-		Name:      teleportUser,
-		Policies:  nil,
-		Roles:     nil,
-		SSHLogins: user.GetLogins(),
-		Traits:    user.GetTraits(),
-	})
-	if err != nil {
-		return trace.Wrap(err)
-	}
-
-	if predicateAccess {
-		return nil
-	}
 
 	// check if roles allow access to server
 	if err := accessChecker.CheckAccess(

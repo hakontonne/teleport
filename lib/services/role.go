@@ -934,7 +934,7 @@ func (set RoleSet) EnumerateDatabaseUsers(database types.Database, extraUsers ..
 
 		result.wildcardDenied = result.wildcardDenied || wildcardDenied
 
-		if err := NewRoleSet(role).checkAccess(database, AccessMFAParams{Verified: true}); err == nil {
+		if _, err := NewRoleSet(role).checkAccess(database, AccessMFAParams{Verified: true}); err == nil {
 			result.wildcardAllowed = result.wildcardAllowed || wildcardAllowed
 		}
 
@@ -944,7 +944,7 @@ func (set RoleSet) EnumerateDatabaseUsers(database types.Database, extraUsers ..
 
 	// check each individual user against the database.
 	for _, user := range users {
-		err := set.checkAccess(database, AccessMFAParams{Verified: true}, &DatabaseUserMatcher{User: user})
+		_, err := set.checkAccess(database, AccessMFAParams{Verified: true}, &DatabaseUserMatcher{User: user})
 		result.allowedDeniedMap[user] = err == nil
 	}
 
@@ -968,7 +968,7 @@ func (set RoleSet) EnumerateServerLogins(server types.Server) EnumerationResult 
 
 	// check each individual user against the server.
 	for _, user := range logins {
-		err := set.checkAccess(server, AccessMFAParams{Verified: true}, NewLoginMatcher(user))
+		_, err := set.checkAccess(server, AccessMFAParams{Verified: true}, NewLoginMatcher(user))
 		result.allowedDeniedMap[user] = err == nil
 	}
 
