@@ -170,6 +170,9 @@ type Resource struct {
 
 	// The labels on the resource.
 	Labels map[string]string `json:"labels"`
+
+	// The verb of the operation, e.g. "list", "read" or "write".
+	Verb string `json:"verb"`
 }
 
 // GetName returns the name of the object.

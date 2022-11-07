@@ -2386,7 +2386,7 @@ func (set RoleSet) GuessIfAccessIsPossible(ctx RuleContext, namespace string, re
 	//   that there could be a resource that matches it.
 	// - "deny" rules have their "where" clause always fail, as it's assumed that
 	//   there could be a resource that passes it.
-	return set.checkAccessToRuleImpl(checkAccessParams{
+	_, err := set.checkAccessToRuleImpl(checkAccessParams{
 		ctx:        ctx,
 		namespace:  namespace,
 		resource:   resource,
@@ -2395,6 +2395,7 @@ func (set RoleSet) GuessIfAccessIsPossible(ctx RuleContext, namespace string, re
 		denyWhere:  boolParser(false), // never matches
 		silent:     silent,
 	})
+	return err
 }
 
 type boolParser bool
@@ -2409,12 +2410,13 @@ func (p boolParser) Parse(string) (interface{}, error) {
 // namespace to the specified resource and verb.
 // silent controls whether the access violations are logged.
 func (set RoleSet) CheckAccessToRule(ctx RuleContext, namespace string, resource string, verb string, silent bool) error {
+	// TODO(joel): check resource predicate
 	whereParser, err := NewWhereParser(ctx)
 	if err != nil {
 		return trace.Wrap(err)
 	}
 
-	return set.checkAccessToRuleImpl(checkAccessParams{
+	_, err = set.checkAccessToRuleImpl(checkAccessParams{
 		ctx:        ctx,
 		namespace:  namespace,
 		resource:   resource,
@@ -2423,6 +2425,8 @@ func (set RoleSet) CheckAccessToRule(ctx RuleContext, namespace string, resource
 		denyWhere:  whereParser,
 		silent:     silent,
 	})
+
+	return err
 }
 
 type checkAccessParams struct {
@@ -2434,10 +2438,10 @@ type checkAccessParams struct {
 	silent                bool
 }
 
-func (set RoleSet) checkAccessToRuleImpl(p checkAccessParams) error {
+func (set RoleSet) checkAccessToRuleImpl(p checkAccessParams) (predicateEngine.AccessDecision, error) {
 	actionsParser, err := NewActionsParser(p.ctx)
 	if err != nil {
-		return trace.Wrap(err)
+		return predicateEngine.AccessUndecided, trace.Wrap(err)
 	}
 
 	// check deny: a single match on a deny rule prohibits access
@@ -2446,7 +2450,7 @@ func (set RoleSet) checkAccessToRuleImpl(p checkAccessParams) error {
 		if matchNamespace {
 			matched, err := MakeRuleSet(role.GetRules(types.Deny)).Match(p.denyWhere, actionsParser, p.resource, p.verb)
 			if err != nil {
-				return trace.Wrap(err)
+				return predicateEngine.AccessUndecided, trace.Wrap(err)
 			}
 			if matched {
 				if !p.silent {
@@ -2455,7 +2459,7 @@ func (set RoleSet) checkAccessToRuleImpl(p checkAccessParams) error {
 					}).Infof("Access to %v %v in namespace %v denied to %v: deny rule matched.",
 						p.verb, p.resource, p.namespace, role.GetName())
 				}
-				return trace.AccessDenied("access denied to perform action %q on %q", p.verb, p.resource)
+				return predicateEngine.AccessDenied, trace.AccessDenied("access denied to perform action %q on %q", p.verb, p.resource)
 			}
 		}
 	}
@@ -2466,10 +2470,10 @@ func (set RoleSet) checkAccessToRuleImpl(p checkAccessParams) error {
 		if matchNamespace {
 			match, err := MakeRuleSet(role.GetRules(types.Allow)).Match(p.allowWhere, actionsParser, p.resource, p.verb)
 			if err != nil {
-				return trace.Wrap(err)
+				return predicateEngine.AccessUndecided, trace.Wrap(err)
 			}
 			if match {
-				return nil
+				return predicateEngine.AccessAllowed, nil
 			}
 		}
 	}
@@ -2480,7 +2484,7 @@ func (set RoleSet) checkAccessToRuleImpl(p checkAccessParams) error {
 		}).Infof("Access to %v %v in namespace %v denied to %v: no allow rule matched.",
 			p.verb, p.resource, p.namespace, set)
 	}
-	return trace.AccessDenied("access denied to perform action %q on %q", p.verb, p.resource)
+	return predicateEngine.AccessUndecided, trace.AccessDenied("access denied to perform action %q on %q", p.verb, p.resource)
 }
 
 // ExtractConditionForIdentifier returns a restrictive filter expression
