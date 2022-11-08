@@ -1534,7 +1534,7 @@ func TestCheckRuleAccess(t *testing.T) {
 		}
 		for j, check := range tc.checks {
 			comment := fmt.Sprintf("test case %v '%v', check %v", i, tc.name, j)
-			result := set.CheckAccessToRule(&check.context, check.namespace, check.rule, check.verb, false)
+			_, result := set.CheckAccessToRule(&check.context, check.namespace, check.rule, check.verb, false)
 			if check.hasAccess {
 				require.NoError(t, result, comment)
 			} else {
@@ -1731,7 +1731,7 @@ func TestGuessIfAccessIsPossible(t *testing.T) {
 			params := test.params
 			const silent = true
 			for _, verb := range params.verbs {
-				err := test.roles.CheckAccessToRule(&params.ctx, params.namespace, params.resource, verb, silent)
+				_, err := test.roles.CheckAccessToRule(&params.ctx, params.namespace, params.resource, verb, silent)
 				if gotAccess, wantAccess := err == nil, test.wantRuleAccess; gotAccess != wantAccess {
 					t.Errorf("CheckAccessToRule(verb=%q) returned err = %v=q, wantAccess = %v", verb, err, wantAccess)
 				}

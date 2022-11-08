@@ -338,6 +338,41 @@ func (a *accessChecker) CheckAccess(r AccessCheckable, mfa AccessMFAParams, matc
 		Namespace: defaults.Namespace,
 		Kind:      r.GetKind(),
 		Labels:    r.GetAllLabels(),
+		Verb:      types.VerbRead,
+	}, &predicate.User{
+		Name:      a.info.Name,
+		Roles:     a.info.Roles,
+		Policies:  a.info.AccessPolicies,
+		SSHLogins: a.info.Logins,
+		Traits:    a.info.Traits,
+	})
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	return blendAccessDecision(hasPredicateAccess, hasStandardAccess)
+}
+
+// CheckAccessToRule checks if the identity has access in the given
+// namespace to the specified resource and verb.
+// silent controls whether the access violations are logged.
+func (a *accessChecker) CheckAccessToRule(ctx RuleContext, namespace string, resource string, verb string, silent bool) error {
+	// TODO(joel): check resource predicate
+	hasStandardAccess, err := a.RoleSet.CheckAccessToRule(ctx, namespace, resource, verb, silent)
+	if !trace.IsAccessDenied(err) {
+		return trace.Wrap(err)
+	}
+
+	r, err := ctx.GetResource()
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	hasPredicateAccess, err := a.PredicateAccessChecker.CheckAccessToResource(&predicate.Resource{
+		Namespace: defaults.Namespace,
+		Kind:      r.GetKind(),
+		Labels:    r.GetMetadata().Labels,
+		Verb:      verb,
 	}, &predicate.User{
 		Name:      a.info.Name,
 		Roles:     a.info.Roles,

@@ -2409,14 +2409,13 @@ func (p boolParser) Parse(string) (interface{}, error) {
 // CheckAccessToRule checks if the RoleSet provides access in the given
 // namespace to the specified resource and verb.
 // silent controls whether the access violations are logged.
-func (set RoleSet) CheckAccessToRule(ctx RuleContext, namespace string, resource string, verb string, silent bool) error {
-	// TODO(joel): check resource predicate
+func (set RoleSet) CheckAccessToRule(ctx RuleContext, namespace string, resource string, verb string, silent bool) (predicateEngine.AccessDecision, error) {
 	whereParser, err := NewWhereParser(ctx)
 	if err != nil {
-		return trace.Wrap(err)
+		return predicateEngine.AccessUndecided, trace.Wrap(err)
 	}
 
-	_, err = set.checkAccessToRuleImpl(checkAccessParams{
+	return set.checkAccessToRuleImpl(checkAccessParams{
 		ctx:        ctx,
 		namespace:  namespace,
 		resource:   resource,
@@ -2425,8 +2424,6 @@ func (set RoleSet) CheckAccessToRule(ctx RuleContext, namespace string, resource
 		denyWhere:  whereParser,
 		silent:     silent,
 	})
-
-	return err
 }
 
 type checkAccessParams struct {
