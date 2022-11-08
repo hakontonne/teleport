@@ -23,13 +23,20 @@ option go_package = "github.com/gravitational/teleport/lib/teleterm/v1";
 // connect to a gateway served by the daemon but the cert has since expired and needs to be
 // reissued.
 service TshdEventsService {
-  // Test is an RPC that's used to demonstrate how the implementation of a tshd event may look like
-  // from the beginning till the end.
-  // TODO(ravicious): Remove this once we add an actual RPC to tshd events service.
-  rpc Test(TestRequest) returns (TestResponse);
+  // TODO: Add comment.
+  rpc ReloginRequired(ReloginRequiredRequest) returns (ReloginRequiredResponse);
 }
 
-message TestRequest {
-  string foo = 1;
+message ReloginRequiredRequest {
+  string root_cluster_uri = 1;
+  oneof reason {
+    GatewayCertExpired gateway_cert_expired = 2;
+  }
 }
-message TestResponse {}
+
+message GatewayCertExpired {
+  string gateway_uri = 1;
+  string target_uri = 2;
+}
+
+message ReloginRequiredResponse {}

@@ -31,6 +31,7 @@ import (
 	alpn "github.com/gravitational/teleport/lib/srv/alpnproxy"
 	alpncommon "github.com/gravitational/teleport/lib/srv/alpnproxy/common"
 	"github.com/gravitational/teleport/lib/teleterm/api/uri"
+	"github.com/gravitational/teleport/lib/tlsca"
 	"github.com/gravitational/teleport/lib/utils"
 )
 
@@ -235,6 +236,10 @@ func (g *Gateway) CLICommand() (string, error) {
 	}
 
 	return cliCommand, nil
+}
+
+func (g *Gateway) RouteToDatabase() tlsca.RouteToDatabase {
+	return g.cfg.RouteToDatabase()
 }
 
 // ReloadCert loads the key pair from cfg.CertPath & cfg.KeyPath and updates the cert of the running

@@ -92,6 +92,12 @@ func (r ResourceURI) GetLeafClusterName() string {
 	return result.Params["leaf"]
 }
 
+// GetRootClusterUri returns a URI to the root cluster, effectively trimming any other piece of info
+// from the URI.
+func (r ResourceURI) GetRootClusterUri() ResourceURI {
+	return NewClusterURI(r.GetProfileName())
+}
+
 // AppendServer appends server segment to the URI
 func (r ResourceURI) AppendServer(id string) ResourceURI {
 	r.path = fmt.Sprintf("%v/servers/%v", r.path, id)

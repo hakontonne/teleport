@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/teleport/lib/client"
 	"github.com/gravitational/teleport/lib/client/db/dbcmd"
 	api "github.com/gravitational/teleport/lib/teleterm/api/protogen/golang/v1"
 	"github.com/gravitational/teleport/lib/teleterm/clusters"
@@ -174,6 +175,64 @@ func (s *Service) createGateway(ctx context.Context, params CreateGatewayParams)
 		LocalPort:             params.LocalPort,
 		CLICommandProvider:    cliCommandProvider,
 		TCPPortAllocator:      s.cfg.TCPPortAllocator,
+		// TODO: Add test that makes sure NewWithLocalPort properly copies
+		// OnConnRejectedDueToExpiredCert.
+		// TODO: Move this to a separate struct? It could probably receive a pointer to tshdEventsClient
+		// and a function/interface for reissuing db certs.
+		OnExpiredCert: func(ctx context.Context, gateway *gateway.Gateway) error {
+			// TODO: Orchestrate cert renewal.
+			// TODO: Request that the Electron app reissues the cert for the db.
+			// Or, tshd could attempt to do it by itself. However, if the call fails, it'd need to request
+			// that the user logs in again and specify the reason.
+			// ReloginRequired(clusterUri, Reason: ExpiredGatewayCert(gatewayUri, targetUri)).
+			// ReissueDBCerts and then
+			// TODO: Refactor this so that it's not one big function.
+			cluster, err := s.ResolveCluster(gateway.TargetURI())
+			if err != nil {
+				return trace.Wrap(err)
+			}
+
+			err = s.reissueAndReloadGatewayCert(ctx, cluster, gateway)
+
+			if err == nil {
+				return nil
+			}
+
+			// Handle error from reissuing the cert.
+
+			if !client.IsErrorResolvableWithRelogin(err) {
+				// TODO: Send this error to tshd events service.
+				return trace.Wrap(err)
+			}
+
+			// Request relogin
+
+			// TODO: Add deadline.
+			// TODO: This should account for gateway lifecycle. Should context be passed to OnExpiredCert
+			// too?
+			err = s.requestReloginFromElectronApp(ctx,
+				&api.ReloginRequiredRequest{
+					RootClusterUri: cluster.URI.GetRootClusterUri().String(),
+					Reason: &api.ReloginRequiredRequest_GatewayCertExpired{
+						GatewayCertExpired: &api.GatewayCertExpired{
+							GatewayUri: gateway.URI().String(),
+							TargetUri:  gateway.TargetURI(),
+						},
+					},
+				})
+			if err != nil {
+				// TODO: Send this error to tshd events service.
+				return trace.Wrap(err)
+			}
+
+			err = s.reissueAndReloadGatewayCert(ctx, cluster, gateway)
+			if err != nil {
+				// TODO: Send this error to tshd events service.
+				return trace.Wrap(err)
+			}
+
+			return nil
+		},
 	}
 
 	gateway, err := s.cfg.GatewayCreator.CreateGateway(ctx, clusterCreateGatewayParams)
@@ -190,6 +249,16 @@ func (s *Service) createGateway(ctx context.Context, params CreateGatewayParams)
 	s.gateways[gateway.URI().String()] = gateway
 
 	return gateway, nil
+}
+
+func (s *Service) reissueAndReloadGatewayCert(ctx context.Context, cluster *clusters.Cluster, gateway *gateway.Gateway) error {
+	err := cluster.ReissueDBCerts(ctx, gateway.RouteToDatabase())
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	err = gateway.ReloadCert()
+	return trace.Wrap(err)
 }
 
 // RemoveGateway removes cluster gateway
@@ -585,10 +654,26 @@ func (s *Service) TransferFile(ctx context.Context, request *api.FileTransferReq
 	return cluster.TransferFile(ctx, request, sendProgress)
 }
 
+func (s *Service) requestReloginFromElectronApp(ctx context.Context, req *api.ReloginRequiredRequest) error {
+	if !s.reloginRequestMu.TryLock() {
+		return trace.AlreadyExists("another relogin request is in progress")
+	}
+	defer s.reloginRequestMu.Unlock()
+
+	_, err := s.tshdEventsClient.ReloginRequired(ctx, req)
+
+	return trace.Wrap(err, "could not reach tshd events service")
+}
+
 // Service is the daemon service
 type Service struct {
 	cfg *Config
-	mu  sync.RWMutex
+	// mu is used when modifying state of Service, for example when mutating the gateways map.
+	mu sync.RWMutex
+	// reloginRequestMu is used when a goroutine needs to request a relogin frem the Electron app.
+	// Since the app can show only one login modal at a time, we need to submit only one request at a
+	// time.
+	reloginRequestMu sync.Mutex
 	// closeContext is canceled when Service is getting stopped. It is used as a context for the calls
 	// to the tshd events gRPC client.
 	closeContext context.Context

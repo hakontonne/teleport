@@ -22,10 +22,8 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type TshdEventsServiceClient interface {
-	// Test is an RPC that's used to demonstrate how the implementation of a tshd event may look like
-	// from the beginning till the end.
-	// TODO(ravicious): Remove this once we add an actual RPC to tshd events service.
-	Test(ctx context.Context, in *TestRequest, opts ...grpc.CallOption) (*TestResponse, error)
+	// TODO: Add comment.
+	ReloginRequired(ctx context.Context, in *ReloginRequiredRequest, opts ...grpc.CallOption) (*ReloginRequiredResponse, error)
 }
 
 type tshdEventsServiceClient struct {
@@ -36,9 +34,9 @@ func NewTshdEventsServiceClient(cc grpc.ClientConnInterface) TshdEventsServiceCl
 	return &tshdEventsServiceClient{cc}
 }
 
-func (c *tshdEventsServiceClient) Test(ctx context.Context, in *TestRequest, opts ...grpc.CallOption) (*TestResponse, error) {
-	out := new(TestResponse)
-	err := c.cc.Invoke(ctx, "/teleport.terminal.v1.TshdEventsService/Test", in, out, opts...)
+func (c *tshdEventsServiceClient) ReloginRequired(ctx context.Context, in *ReloginRequiredRequest, opts ...grpc.CallOption) (*ReloginRequiredResponse, error) {
+	out := new(ReloginRequiredResponse)
+	err := c.cc.Invoke(ctx, "/teleport.terminal.v1.TshdEventsService/ReloginRequired", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -49,10 +47,8 @@ func (c *tshdEventsServiceClient) Test(ctx context.Context, in *TestRequest, opt
 // All implementations must embed UnimplementedTshdEventsServiceServer
 // for forward compatibility
 type TshdEventsServiceServer interface {
-	// Test is an RPC that's used to demonstrate how the implementation of a tshd event may look like
-	// from the beginning till the end.
-	// TODO(ravicious): Remove this once we add an actual RPC to tshd events service.
-	Test(context.Context, *TestRequest) (*TestResponse, error)
+	// TODO: Add comment.
+	ReloginRequired(context.Context, *ReloginRequiredRequest) (*ReloginRequiredResponse, error)
 	mustEmbedUnimplementedTshdEventsServiceServer()
 }
 
@@ -60,8 +56,8 @@ type TshdEventsServiceServer interface {
 type UnimplementedTshdEventsServiceServer struct {
 }
 
-func (UnimplementedTshdEventsServiceServer) Test(context.Context, *TestRequest) (*TestResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Test not implemented")
+func (UnimplementedTshdEventsServiceServer) ReloginRequired(context.Context, *ReloginRequiredRequest) (*ReloginRequiredResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReloginRequired not implemented")
 }
 func (UnimplementedTshdEventsServiceServer) mustEmbedUnimplementedTshdEventsServiceServer() {}
 
@@ -76,20 +72,20 @@ func RegisterTshdEventsServiceServer(s grpc.ServiceRegistrar, srv TshdEventsServ
 	s.RegisterService(&TshdEventsService_ServiceDesc, srv)
 }
 
-func _TshdEventsService_Test_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TestRequest)
+func _TshdEventsService_ReloginRequired_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReloginRequiredRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(TshdEventsServiceServer).Test(ctx, in)
+		return srv.(TshdEventsServiceServer).ReloginRequired(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/teleport.terminal.v1.TshdEventsService/Test",
+		FullMethod: "/teleport.terminal.v1.TshdEventsService/ReloginRequired",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TshdEventsServiceServer).Test(ctx, req.(*TestRequest))
+		return srv.(TshdEventsServiceServer).ReloginRequired(ctx, req.(*ReloginRequiredRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -102,8 +98,8 @@ var TshdEventsService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*TshdEventsServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "Test",
-			Handler:    _TshdEventsService_Test_Handler,
+			MethodName: "ReloginRequired",
+			Handler:    _TshdEventsService_ReloginRequired_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

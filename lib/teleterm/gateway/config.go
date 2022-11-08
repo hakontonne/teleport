@@ -28,6 +28,7 @@ import (
 	"github.com/gravitational/teleport/api/constants"
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/teleterm/api/uri"
+	"github.com/gravitational/teleport/lib/tlsca"
 )
 
 // Config describes gateway configuration
@@ -121,4 +122,12 @@ func (c *Config) CheckAndSetDefaults() error {
 	}
 
 	return nil
+}
+
+func (c *Config) RouteToDatabase() tlsca.RouteToDatabase {
+	return tlsca.RouteToDatabase{
+		ServiceName: c.TargetName,
+		Protocol:    c.Protocol,
+		Username:    c.TargetUser,
+	}
 }
