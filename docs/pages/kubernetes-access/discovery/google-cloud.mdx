@@ -1,6 +1,6 @@
 ---
-title: Teleport EKS Auto-Discovery (Preview)
-description: How to configure auto-discovery of AWS EKS clusters in Teleport.
+title: Teleport GKE Auto-Discovery (Preview)
+description: How to configure auto-discovery of Google Kubernetes Engine clusters in Teleport.
 ---
 
 The Teleport Discovery Service can automatically discover Google Kubernetes
@@ -19,19 +19,30 @@ Auto-Discovery for GKE.
 
 - A Google Cloud account with permissions to create GKE clusters and service
   accounts.
-- One or more GKE clusters running. 
+- One or more GKE clusters running. Your Kubernetes user must have permissions
+  to create `ClusterRole` and `ClusterRoleBinding` resources in your clusters.
 - A Linux host where you will run the Teleport Discovery and Kubernetes
   services. You can run this host on any cloud provider or even use a local
   machine.
+
+(!docs/pages/includes/tctl.mdx!)
 
 ## Step 1/3. Obtain Google Cloud credentials
 
 ### Create a service account
 
 The Teleport Discovery Service uses a Google Cloud credentials file to
-authenticate to your Google Cloud account and discover GKE clusters. To generate
-the credentials file, first create a service account with the following
-definition:
+authenticate to your Google Cloud account and discover GKE clusters. 
+
+
+In the Google Cloud console, go to the [Service
+Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts) page and
+create a service account.
+
+{/* TODO: Show a screenshot*/}
+
+To generate the credentials file, first create a service account with the
+following definition:
 
 {/* TODO: show more specific UI steps for creating this?*/}
 
@@ -51,26 +62,32 @@ title: GKEKubernetesAutoDisc
 
 ### Download a credentials file
 
-{/* TODO: instructions for downloading the credentials file. See Google Cloud
-Database Access giudes for how to do this*/}
+Once you create your service account, visit the service account's Keys tab and
+create a new key:
 
+{/* TODO: Recreate this image for this guide* }
 
-## Step 2/3. Configure authorization in your GKE cluster
+![Service Account Keys](../../../img/database-access/guides/cloudsql/service-account-keys@2x.png)
+
+Make sure to choose the JSON format:
+
+{/* TODO: Recreate this image if needed*/}
+![Service Account New Key](../../../img/database-access/guides/cloudsql/service-account-new-key@2x.png)
+
+Move your credentials file to the host running the Teleport Kubernetes Service
+and Discovery Service at the path `/etc/google-cloud-credentials.json`. We will
+use this credentials file when running these services later in this guide.
+
+## Step 2/3. Authorize Teleport to discover GKE clusters
 
 To forward requests to the Kubernetes cluster, the Teleport Kubernetes Service 
 requires cluster-wide permissions to impersonate RBAC users and groups, to
 create `SelfSubjectAccessReviews` and `SelfSubjectRulesReviews`, and, finally,
 read access to `Pods`.
 
-{/* TODO: Add context to the Tabs below*/}
+To enable this access, define a manifest with the following content in a file
+called `teleport-auth.yaml`:
 
-Connect to your target cluster with your credentials and create the following 
-resources using `kubectl`.
-
-### ClusterRole
-
-Create the `ClusterRole` RBAC definition with the required permissions for Teleport 
-Kubernetes Service to forward requests to the cluster.
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -99,13 +116,7 @@ rules:
   - selfsubjectrulesreviews
   verbs:
   - create
-```
-
-### ClusterRoleBinding
-
-Link the previously created `ClusterRole` into a `teleport` RBAC group.
-
-```yaml
+---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -120,10 +131,16 @@ subjects:
   apiGroup: rbac.authorization.k8s.io
 ```
 
-## Step 3/3. Configure Teleport to discover GKE clusters
+{/* TODO: Add instructions for shifting context?*/}
 
-{/* TODO: Edit this section to follow the structure of my dynamic registration
-guide*/}
+Connect to your target cluster with create the following resources using
+`kubectl`:
+
+```code
+$ kubectl create -f teleport-auth.yaml
+```
+
+## Step 3/3. Configure Teleport to discover GKE clusters
 
 ### Install Teleport
 
@@ -168,7 +185,7 @@ discovery_service:
     - types: ["gke"]
       locations: ["*"]
       project_ids: ["myproject"] # replace with my project ID
-      tags: "*"
+      tags: ["*"]
 kubernetes_service:
   enabled: "yes"
   resources:
@@ -180,23 +197,100 @@ Replace `teleport.example.com:3080` with the host and port of your Teleport
 Proxy Service (e.g., `mytenant.teleport.sh` for Teleport Cloud tenants).
 
 In the `discovery_service` section, replace `myproject` with the ID of your
-Google Cloud project. {/* TODO: How do you find this?*/}
+Google Cloud project.{/* TODO: How do you find this?*/} The `project_ids` field
+must include at least one value, and it must not be the wildcard character
+(`*`).
 
-{/* TODO: summarize the rules for your a valid config*/}
+Each item in `discovery_service.gcp` is a matcher for Kubernetes clusters in
+GKE. Each matcher's `types` field must be set to an array with a single string
+value, `gke`. 
 
-{/* TODO: use the Details box re: matching more specific clusters from my
-dynamic registration guide*/}
+The `locations` field contains an array of Google Cloud regions that the
+matcher will search for GKE clusters. The wildcard character, `*`, configures
+the matcher not to filter by region. {/* TODO: Does this apply to Google Cloud
+zones, regions, or both?*/} 
+
+Like `locations`, `tags` consists of an array of strings. A wildcard value
+matches all tags in your Google Cloud account. If you include another value,
+the matcher will match all GKE clusters with the provided tag. {/* TODO: These
+are Google Cloud tags, right, not Teleport tags?*/}
+
+{/* TODO: behavior if there are multiple matchers? Is it OR or AND?*/}
 
 ### Start the Kubernetes Service and Discovery Service 
 
-{/* TODO: instructions for using the Google service account env var */}
+On the host where you will run the Kubernetes Service, execute the following
+command, depending on whether you installed Teleport using a package manager or
+via a TAR archive:
 
-{/* TODO: Instructions for starting Teleport from the dynamic registration guide
-*/}
+<Tabs>
+<TabItem label="Package Manager">
+
+When you installed Teleport via package manager, the installation process
+configured a systemd service for Teleport. This service reads environment
+variables from a file at the path `/etc/default/teleport`.
+
+Run the following command to enable Teleport's built-in Google Cloud client to
+read the credentials file for its service account:
+
+```code
+$ cat<<EOF | sudo tee /etc/default/teleport
+GOOGLE_APPLICATION_CREDENTIALS="/etc/google-cloud-credentials.json"
+EOF
+```
+
+Start the Teleport service:
+
+```code
+$ sudo systemctl start teleport
+```
+</TabItem>
+<TabItem label="TAR archive">
+```code
+$ export GOOGLE_APPLICATION_CREDENTIALS="/etc/google-cloud-credentials.json"
+$ sudo -E teleport start
+```
+</TabItem>
+</Tabs>
 
 ## Step 4/4. Connect to your GKE cluster
 
-{/* TODO: Instructions similar to my dynamic registration instructions*/}
+### Allow access to your Kubernetes cluster
+
+Ensure that you are in the correct Kubernetes context for the cluster you would
+like to enable access to.
+
+Retrieve all available contexts:
+
+```code
+$ kubectl config get-contexts
+```
+
+Switch to your context, replacing `CONTEXT_NAME` with the name of your chosen
+context:
+
+```code
+$ kubectl config use-context CONTEXT_NAME
+Switched to context CONTEXT_NAME
+```
+
+(!docs/pages/includes/kubernetes-access/rbac.mdx!)
+
+### Access your cluster
+
+Run the following command to list the Kubernetes clusters that your Teleport
+userh as access to. The list should now include your GKE cluster:
+
+```code
+$ tsh kube ls
+```
+
+Log in to your cluster, replacing `mycluster` with the name of a cluster you
+listed previously:
+
+```code
+$ tsh kube login mycluster
+```
 
 ## Troubleshooting
 
