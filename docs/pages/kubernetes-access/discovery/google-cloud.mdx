@@ -1,0 +1,203 @@
+---
+title: Teleport EKS Auto-Discovery (Preview)
+description: How to configure auto-discovery of AWS EKS clusters in Teleport.
+---
+
+The Teleport Discovery Service can automatically discover Google Kubernetes
+Engine (GKE) clusters and enroll them in Teleport. Using Teleport Kubernetes
+Auto-Discovery, you can manage secure access to your GKE clusters as soon as
+they are created, without needing to set up Teleport within your clusters.
+
+In this guide, we will show you how to get started with Teleport Kubernetes
+Auto-Discovery for GKE.
+
+(!docs/pages/kubernetes-access/discovery/includes/step-description.mdx!)
+
+## Prerequisites
+
+(!docs/pages/includes/edition-prereqs-tabs.mdx!)
+
+- A Google Cloud account with permissions to create GKE clusters and service
+  accounts.
+- One or more GKE clusters running. 
+- A Linux host where you will run the Teleport Discovery and Kubernetes
+  services. You can run this host on any cloud provider or even use a local
+  machine.
+
+## Step 1/3. Obtain Google Cloud credentials
+
+### Create a service account
+
+The Teleport Discovery Service uses a Google Cloud credentials file to
+authenticate to your Google Cloud account and discover GKE clusters. To generate
+the credentials file, first create a service account with the following
+definition:
+
+{/* TODO: show more specific UI steps for creating this?*/}
+
+```yaml
+description: 'GKE Auto-Discovery'
+includedPermissions:
+- container.clusters.impersonate
+- container.clusters.get
+- container.clusters.list
+- container.pods.get
+- container.selfSubjectAccessReviews.create
+- container.selfSubjectRulesReviews.create
+name: projects/{projectID}/roles/GKEKubernetesAutoDisc
+stage: GA
+title: GKEKubernetesAutoDisc
+```
+
+### Download a credentials file
+
+{/* TODO: instructions for downloading the credentials file. See Google Cloud
+Database Access giudes for how to do this*/}
+
+
+## Step 2/3. Configure authorization in your GKE cluster
+
+To forward requests to the Kubernetes cluster, the Teleport Kubernetes Service 
+requires cluster-wide permissions to impersonate RBAC users and groups, to
+create `SelfSubjectAccessReviews` and `SelfSubjectRulesReviews`, and, finally,
+read access to `Pods`.
+
+{/* TODO: Add context to the Tabs below*/}
+
+Connect to your target cluster with your credentials and create the following 
+resources using `kubectl`.
+
+### ClusterRole
+
+Create the `ClusterRole` RBAC definition with the required permissions for Teleport 
+Kubernetes Service to forward requests to the cluster.
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: teleport
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - users
+  - groups
+  - serviceaccounts
+  verbs:
+  - impersonate
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+- apiGroups:
+  - "authorization.k8s.io"
+  resources:
+  - selfsubjectaccessreviews
+  - selfsubjectrulesreviews
+  verbs:
+  - create
+```
+
+### ClusterRoleBinding
+
+Link the previously created `ClusterRole` into a `teleport` RBAC group.
+
+```yaml
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: teleport
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: teleport
+subjects:
+- kind: Group
+  name: teleport
+  apiGroup: rbac.authorization.k8s.io
+```
+
+## Step 3/3. Configure Teleport to discover GKE clusters
+
+{/* TODO: Edit this section to follow the structure of my dynamic registration
+guide*/}
+
+### Install Teleport
+
+Install Teleport on the host you are using to run the Kubernetes Service and
+Discovery Service.
+
+(!docs/includes/install-linux.mdx!)
+
+### Create a join token 
+
+Teleport Auto-Discovery requires a Teleport join token for the Discovery and
+Kubernetes services to join the cluster. Generate one by running the following
+command against your Teleport Auth Service and save it in `/tmp/token` on the
+machine that will run Kubernetes Auto-Discovery:
+
+```code
+$ tctl tokens add --type=discovery,kube
+```
+
+### Configure the Kubernetes Service and Discovery Service
+
+On the host running the Kubernetes Service and Discovery Service, create a
+Teleport configuration file with the following content at `/etc/teleport.yaml`:
+
+```yaml
+version: v2
+teleport:
+  join_params:
+    token_name: "/tmp/token"
+    method: token
+  auth_servers:
+  - "teleport.example.com:3080"
+auth_service:
+  enabled: off
+proxy_service:
+  enabled: off
+ssh_service:
+  enabled: off
+discovery_service:
+  enabled: "yes"
+  gcp:
+    - types: ["gke"]
+      locations: ["*"]
+      project_ids: ["myproject"] # replace with my project ID
+      tags: "*"
+kubernetes_service:
+  enabled: "yes"
+  resources:
+  - labels:
+      "*": "*"
+```
+
+Replace `teleport.example.com:3080` with the host and port of your Teleport
+Proxy Service (e.g., `mytenant.teleport.sh` for Teleport Cloud tenants).
+
+In the `discovery_service` section, replace `myproject` with the ID of your
+Google Cloud project. {/* TODO: How do you find this?*/}
+
+{/* TODO: summarize the rules for your a valid config*/}
+
+{/* TODO: use the Details box re: matching more specific clusters from my
+dynamic registration guide*/}
+
+### Start the Kubernetes Service and Discovery Service 
+
+{/* TODO: instructions for using the Google service account env var */}
+
+{/* TODO: Instructions for starting Teleport from the dynamic registration guide
+*/}
+
+## Step 4/4. Connect to your GKE cluster
+
+{/* TODO: Instructions similar to my dynamic registration instructions*/}
+
+## Troubleshooting
+
+(!docs/pages/kubernetes-access/discovery/includes/troubleshooting.mdx!)
