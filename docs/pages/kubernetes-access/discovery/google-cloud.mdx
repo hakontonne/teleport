@@ -282,17 +282,23 @@ via a TAR archive:
 <TabItem label="Package Manager">
 
 When you installed Teleport via package manager, the installation process
-configured a systemd service for Teleport. This service reads environment
-variables from a file at the path `/etc/default/teleport`.
+created a configuration for the init system `systemd` to run Teleport as a
+daemon. 
 
-Run the following command to enable Teleport's built-in Google Cloud client to
-read the credentials file for its service account:
+This service reads environment variables from a file at the path
+`/etc/default/teleport`. Teleport's built-in Google Cloud client reads the
+credentials file at the location given by the `GOOGLE_APPLICATION_CREDENTIALS`
+variable. 
+
+Run the following command to enable Teleport to read the credentials file: 
 
 ```code
 $ cat<<EOF | sudo tee /etc/default/teleport
 GOOGLE_APPLICATION_CREDENTIALS="/var/lib/teleport/google-cloud-credentials.json"
 EOF
+
 ```
+{/*TODO: the empty line prevents "undefined" from rendering*/}
 
 Start the Teleport service:
 
@@ -300,7 +306,13 @@ Start the Teleport service:
 $ sudo systemctl start teleport
 ```
 </TabItem>
-<TabItem label="TAR archive">
+<TabItem label="TAR Archive">
+
+To authenticate to Google Cloud, Teleport's built-in Google Cloud client reads
+the credentials file at the location given by the
+`GOOGLE_APPLICATION_CREDENTIALS` variable. Run Teleport with this variable
+assigned:
+
 ```code
 $ export GOOGLE_APPLICATION_CREDENTIALS="/var/lib/teleport/google-cloud-credentials.json"
 $ sudo -E teleport start
