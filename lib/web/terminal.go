@@ -19,6 +19,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -27,12 +28,12 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/gorilla/websocket"
 	"github.com/gravitational/trace"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/unicode"
+	"nhooyr.io/websocket"
 
 	"github.com/gravitational/teleport"
 	authproto "github.com/gravitational/teleport/api/client/proto"
@@ -206,13 +207,17 @@ func (t *TerminalHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	t.ctx.AddClosers(t)
 	defer t.ctx.RemoveCloser(t)
 
-	upgrader := websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin:     func(r *http.Request) bool { return true },
+	// Safari doesn't handle compression correctly, so disable it
+	// https://github.com/nhooyr/websocket/issues/218
+	var compressionMode websocket.CompressionMode
+	if strings.Contains(r.UserAgent(), "Safari") {
+		compressionMode = websocket.CompressionDisabled
 	}
 
-	ws, err := upgrader.Upgrade(w, r, nil)
+	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
+		CompressionMode:    compressionMode,
+	})
 	if err != nil {
 		errMsg := "Error upgrading to websocket"
 		t.log.Errorf("%v: %v", errMsg, err)
@@ -220,7 +225,6 @@ func (t *TerminalHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ws.SetReadDeadline(deadlineForInterval(t.params.KeepAliveInterval))
 	t.handler(ws, r)
 }
 
@@ -251,10 +255,7 @@ func (t *TerminalHandler) startPingLoop(ws *websocket.Conn) {
 	for {
 		select {
 		case <-tickerCh.C:
-			// A short deadline is used here to detect a broken connection quickly.
-			// If this is just a temporary issue, we will retry shortly anyway.
-			deadline := time.Now().Add(time.Second)
-			if err := ws.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
+			if err := ws.Ping(t.terminalContext); err != nil {
 				t.log.Errorf("Unable to send ping frame to web client: %v.", err)
 				t.Close()
 				return
@@ -270,7 +271,7 @@ func (t *TerminalHandler) startPingLoop(ws *websocket.Conn) {
 // pumps raw events and audit events back to the client until the SSH session
 // is complete.
 func (t *TerminalHandler) handler(ws *websocket.Conn, r *http.Request) {
-	defer ws.Close()
+	defer ws.Close(websocket.StatusInternalError, "session terminated")
 
 	// Create a context for signaling when the terminal session is over.
 	t.terminalContext, t.terminalCancel = context.WithCancel(context.Background())
@@ -289,12 +290,6 @@ func (t *TerminalHandler) handler(ws *websocket.Conn, r *http.Request) {
 
 	t.log.Debugf("Creating websocket stream for %v.", t.params.SessionID)
 
-	// Update the read deadline upon receiving a pong message.
-	ws.SetPongHandler(func(_ string) error {
-		ws.SetReadDeadline(deadlineForInterval(t.params.KeepAliveInterval))
-		return nil
-	})
-
 	// Start sending ping frames through websocket to client.
 	go t.startPingLoop(ws)
 
@@ -305,6 +300,7 @@ func (t *TerminalHandler) handler(ws *websocket.Conn, r *http.Request) {
 	// Block until the terminal session is complete.
 	<-t.terminalContext.Done()
 	t.log.Debugf("Closing websocket stream for %v.", t.params.SessionID)
+	ws.Close(websocket.StatusNormalClosure, "")
 }
 
 // makeClient builds a *client.TeleportClient for the connection.
@@ -424,7 +420,7 @@ func promptMFAChallenge(
 		}
 
 		wsLock.Lock()
-		err = ws.WriteMessage(websocket.BinaryMessage, msg)
+		err = ws.Write(ctx, websocket.MessageBinary, msg)
 		wsLock.Unlock()
 		if err != nil {
 			return nil, trace.Wrap(err)
@@ -432,12 +428,12 @@ func promptMFAChallenge(
 
 		// Read the challenge response.
 		var bytes []byte
-		ty, bytes, err := ws.ReadMessage()
+		ty, bytes, err := ws.Read(ctx)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		if ty != websocket.BinaryMessage {
-			return nil, trace.BadParameter("expected websocket.BinaryMessage, got %v", ty)
+		if ty != websocket.MessageBinary {
+			return nil, trace.BadParameter("expected binary message, got %v", ty)
 		}
 
 		return codec.decode(bytes, envelopeType)
@@ -487,7 +483,7 @@ func (t *TerminalHandler) streamTerminal(ws *websocket.Conn, tc *client.Teleport
 		return
 	}
 	t.wsLock.Lock()
-	err = ws.WriteMessage(websocket.BinaryMessage, envelopeBytes)
+	err = ws.Write(t.terminalContext, websocket.MessageBinary, envelopeBytes)
 	t.wsLock.Unlock()
 	if err != nil {
 		t.log.Errorf("Unable to send close event to web client.")
@@ -531,7 +527,7 @@ func (t *TerminalHandler) streamEvents(ws *websocket.Conn, tc *client.TeleportCl
 
 			// Send bytes over the websocket to the web client.
 			t.wsLock.Lock()
-			err = ws.WriteMessage(websocket.BinaryMessage, envelopeBytes)
+			err = ws.Write(t.terminalContext, websocket.MessageBinary, envelopeBytes)
 			t.wsLock.Unlock()
 			if err != nil {
 				logger.Errorf("Unable to send audit event to web client: %v.", err)
@@ -624,7 +620,8 @@ func (t *TerminalHandler) write(data []byte, ws *websocket.Conn) (n int, err err
 
 	// Send bytes over the websocket to the web client.
 	t.wsLock.Lock()
-	err = ws.WriteMessage(websocket.BinaryMessage, envelopeBytes)
+	// t.terminalContext may be nil here
+	err = ws.Write(context.Background(), websocket.MessageBinary, envelopeBytes)
 	t.wsLock.Unlock()
 	if err != nil {
 		return 0, trace.Wrap(err)
@@ -646,16 +643,16 @@ func (t *TerminalHandler) read(out []byte, ws *websocket.Conn) (n int, err error
 		return n, nil
 	}
 
-	ty, bytes, err := ws.ReadMessage()
+	ty, bytes, err := ws.Read(context.TODO())
 	if err != nil {
-		if err == io.EOF || websocket.IsCloseError(err, 1006) {
+		if errors.Is(err, io.EOF) || websocket.CloseStatus(err) == websocket.StatusNormalClosure || websocket.CloseStatus(err) == websocket.StatusAbnormalClosure {
 			return 0, io.EOF
 		}
 
 		return 0, trace.Wrap(err)
 	}
 
-	if ty != websocket.BinaryMessage {
+	if ty != websocket.MessageBinary {
 		return 0, trace.BadParameter("expected binary message, got %v", ty)
 	}
 
@@ -727,12 +724,5 @@ func (w *terminalStream) Read(out []byte) (n int, err error) {
 
 // Close the websocket.
 func (w *terminalStream) Close() error {
-	return w.ws.Close()
-}
-
-// deadlineForInterval returns a suitable network read deadline for a given ping interval.
-// We chose to take the current time plus twice the interval to allow the timeframe of one interval
-// to wait for a returned pong message.
-func deadlineForInterval(interval time.Duration) time.Time {
-	return time.Now().Add(interval * 2)
+	return w.ws.Close(websocket.StatusNormalClosure, "")
 }
