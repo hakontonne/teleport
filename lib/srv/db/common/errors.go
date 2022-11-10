@@ -239,11 +239,9 @@ agent's service principal. See: https://goteleport.com/docs/database-access/guid
 
 // IsUnrecognizedAWSEngineNameError checks if the err is non-nil and came from using an engine filter that the
 // AWS region does not recognize.
-func IsUnrecognizedAWSEngineNameError(err error) (res bool) {
+func IsUnrecognizedAWSEngineNameError(err error) bool {
 	if err == nil {
-		res = false
-		return
+		return false
 	}
-	res = strings.Contains(strings.ToLower(err.Error()), "unrecognized engine name")
-	return
+	return strings.Contains(strings.ToLower(err.Error()), "unrecognized engine name")
 }
