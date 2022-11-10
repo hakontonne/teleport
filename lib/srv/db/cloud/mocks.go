@@ -711,7 +711,7 @@ func applyClusterFilters(in []*rds.DBCluster, filters []*rds.Filter) ([]*rds.DBC
 func engineFilterSet(filters []*rds.Filter) map[string]struct{} {
 	out := make(map[string]struct{})
 	for _, f := range filters {
-		if *f.Name != "engine" {
+		if aws.StringValue(f.Name) != "engine" {
 			continue
 		}
 		for _, v := range f.Values {
