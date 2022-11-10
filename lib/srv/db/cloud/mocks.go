@@ -715,7 +715,7 @@ func engineFilterSet(filters []*rds.Filter) map[string]struct{} {
 			continue
 		}
 		for _, v := range f.Values {
-			out[*v] = struct{}{}
+			out[aws.StringValue(v)] = struct{}{}
 		}
 	}
 	return out
