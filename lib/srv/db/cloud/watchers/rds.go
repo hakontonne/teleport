@@ -354,7 +354,7 @@ func recognizedRDSEngines(ctx context.Context, rdsClient rdsiface.RDSAPI, suppor
 		if result == nil || result.Engine == nil {
 			continue
 		}
-		recognized[*result.Engine] = struct{}{}
+		recognized[aws.StringValue(result.Engine)] = struct{}{}
 	}
 	engines := []string{}
 	for _, engine := range supportedEngines {
