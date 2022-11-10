@@ -27,6 +27,7 @@ import (
 	"github.com/gravitational/teleport/api/utils"
 	"github.com/gravitational/teleport/lib/cloud"
 	"github.com/gravitational/teleport/lib/services"
+	"github.com/gravitational/teleport/lib/srv/db/common"
 )
 
 // WatcherConfig is the cloud watcher configuration.
@@ -126,7 +127,9 @@ func (w *Watcher) fetchAndSend() {
 			// others. This is acceptable, thus continue to other fetchers.
 			// DB agent may also query for resources that do not exist. This is ok.
 			// If the resource is created in the future, we will fetch it then.
-			if trace.IsAccessDenied(err) || trace.IsNotFound(err) {
+			// DB agent may be run into "unrecognized" engine filters in certain regions.
+			// This is also ok, other regions may be unaffected.
+			if trace.IsAccessDenied(err) || trace.IsNotFound(err) || common.IsUnrecognizedAWSEngineNameError(err) {
 				w.log.WithError(err).Debugf("Skipping fetcher %v.", fetcher)
 				continue
 			}
