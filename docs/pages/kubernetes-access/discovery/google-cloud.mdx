@@ -64,39 +64,37 @@ Click **Create**.
 In the Google Cloud console, go to the [Service
 Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts) page,
 select the project associated with your GKE cluster, and click **Create Service
-Account** 
+Account**.
 
 For **Service account name**, enter "Teleport Discovery Service". The Google
-Cloud console will suggest an ID similar to `teleport-discovery-service` with a
-numberical suffix. We will assume that you are using this service account ID for
-the rest of this guide.
+Cloud console will suggest an ID similar to `teleport-discovery-service`. We
+will assume that you are using this service account ID for the rest of this
+guide.
 
 Click **Create and Continue**.
 
+In the **Grant this service account access to project** section, select the `GKE
+Cluster Discoverer` role you created earlier, then click **Continue**, then
+**Done**.
+
 ### Download a credentials file
 
-Once you create your service account, visit the service account's Keys tab and
-create a new key:
+Once you create your service account, find the service account you crated in the
+[Service accounts](https://console.cloud.google.com/iam-admin/serviceaccounts)
+page of the Google Cloud console and click the link. Click the **Keys** tab,
+then **Add Key** > **Create new key**. Select the **JSON** radio button, then
+**Create**. 
 
-{/* TODO: Recreate this image for this guide* }
+Move your credentials file to the host running the Teleport Discovery Service at
+the path `/var/lib/teleport/google-cloud-credentials.json`. We will use this
+credentials file when running these services later in this guide.
 
-![Service Account Keys](../../../img/database-access/guides/cloudsql/service-account-keys@2x.png)
-
-Make sure to choose the JSON format:
-
-{/* TODO: Recreate this image if needed*/}
-![Service Account New Key](../../../img/database-access/guides/cloudsql/service-account-new-key@2x.png)
-
-Move your credentials file to the host running the Teleport Kubernetes Service
-and Discovery Service at the path `/etc/google-cloud-credentials.json`. We will
-use this credentials file when running these services later in this guide.
-
-## Step 2/3. Authorize Teleport to discover GKE clusters
+## Step 2/3. Authorize the Teleport Kubernetes Service to manage access
 
 To forward requests to the Kubernetes cluster, the Teleport Kubernetes Service 
 requires cluster-wide permissions to impersonate RBAC users and groups, to
 create `SelfSubjectAccessReviews` and `SelfSubjectRulesReviews`, and, finally,
-read access to `Pods`.
+to view pods in the cluster.
 
 To enable this access, define a manifest with the following content in a file
 called `teleport-auth.yaml`:
@@ -144,33 +142,72 @@ subjects:
   apiGroup: rbac.authorization.k8s.io
 ```
 
-{/* TODO: Add instructions for shifting context?*/}
+Ensure that you are in the correct context for your GKE cluster, since running
+`tsh login` will update your context to one named after your Teleport cluster:
 
-Connect to your target cluster with create the following resources using
-`kubectl`:
+```code
+$ kubectl config current-context
+wrong-context-name
+$ kubectl config get-contexts
+wrong-context-name
+context-1
+context-2
+my-gke-cluster
+$ kubectl config use-context mygke-cluster
+```
+
+Create the following resources using `kubectl`:
 
 ```code
 $ kubectl create -f teleport-auth.yaml
+clusterrole.rbac.authorization.k8s.io/teleport created
+clusterrolebinding.rbac.authorization.k8s.io/teleport created
 ```
 
 ## Step 3/3. Configure Teleport to discover GKE clusters
 
+Now that you have created a service account that can discover GKE clusters and a
+cluster role that can manage access, configure the Teleport Discovery Service to
+detect GKE clusters and the Kubernetes Service to proxy user traffic.
+
 ### Install Teleport
 
 Install Teleport on the host you are using to run the Kubernetes Service and
-Discovery Service.
+Discovery Service:
 
-(!docs/includes/install-linux.mdx!)
+(!docs/pages/includes/install-linux.mdx!)
 
 ### Create a join token 
 
-Teleport Auto-Discovery requires a Teleport join token for the Discovery and
-Kubernetes services to join the cluster. Generate one by running the following
-command against your Teleport Auth Service and save it in `/tmp/token` on the
-machine that will run Kubernetes Auto-Discovery:
+The Teleport Discovery Service and Kubernetes Service require an authentication
+token in order to to join the cluster. Generate one by running the following
+command: 
 
 ```code
 $ tctl tokens add --type=discovery,kube
+The invite token: (=presets.tokens.first=)
+This token will expire in 60 minutes.
+
+Run this on the new node to join the cluster:
+
+> teleport start \
+   --roles=discovery,kube \
+   --token=(=presets.tokens.first=) \
+   --ca-pin=(=presets.ca_pin=) \
+   --auth-server=192.0.2.255:3025
+
+Please note:
+
+  - This invitation token will expire in 60 minutes
+  - 192.0.2.255:3025 must be reachable from the new node
+```
+
+Copy the token (e.g., `(=presets.tokens.first=)` above) and save the token in
+`/tmp/token` on the machine that will run the Discovery Service and Kubernetes
+Service, for example:
+
+```code
+$ echo (=presets.tokens.first=) | sudo tee /tmp/token
 ```
 
 ### Configure the Kubernetes Service and Discovery Service
@@ -206,29 +243,34 @@ kubernetes_service:
       "*": "*"
 ```
 
-Replace `teleport.example.com:3080` with the host and port of your Teleport
-Proxy Service (e.g., `mytenant.teleport.sh` for Teleport Cloud tenants).
+Edit this configuration for your environment. Replace
+`teleport.example.com:3080` with the host and port of your Teleport Proxy
+Service (e.g., `mytenant.teleport.sh:443` for a Teleport Cloud tenant).
 
-In the `discovery_service` section, replace `myproject` with the ID of your
-Google Cloud project.{/* TODO: How do you find this?*/} The `project_ids` field
-must include at least one value, and it must not be the wildcard character
-(`*`).
+Each item in `discovery_service.gcp` is a **matcher** for Kubernetes clusters
+in GKE. The Discovery Service periodically executes a request to the Google
+Cloud API based on each matcher to list GKE clusters. In this case, we will
+declare a single matcher.
 
-Each item in `discovery_service.gcp` is a matcher for Kubernetes clusters in
-GKE. Each matcher's `types` field must be set to an array with a single string
+Each matcher's `types` field must be set to an array with a single string
 value, `gke`. 
 
-The `locations` field contains an array of Google Cloud regions that the
-matcher will search for GKE clusters. The wildcard character, `*`, configures
-the matcher not to filter by region. {/* TODO: Does this apply to Google Cloud
-zones, regions, or both?*/} 
+In your matcher, replace `myproject` with the ID of your Google Cloud project.
+The `project_ids` field must include at least one value, and it must not be the
+wildcard character (`*`).
+
+Each matcher's `locations` field contains an array of Google Cloud region or
+zone names that the matcher will search for GKE clusters. The wildcard
+character, `*`, configures the matcher to search all locations.  
 
 Like `locations`, `tags` consists of an array of strings. A wildcard value
 matches all tags in your Google Cloud account. If you include another value,
-the matcher will match all GKE clusters with the provided tag. {/* TODO: These
-are Google Cloud tags, right, not Teleport tags?*/}
+the matcher will match all GKE clusters with the provided tag. 
 
-{/* TODO: behavior if there are multiple matchers? Is it OR or AND?*/}
+Each matcher searches for clusters that match _all_ properties of the matcher,
+i.e., that belong to the specified locations and projects and have the
+specified tags. The Discovery Service registers GKE clusters that match _any_
+configured matcher.
 
 ### Start the Kubernetes Service and Discovery Service 
 
@@ -248,7 +290,7 @@ read the credentials file for its service account:
 
 ```code
 $ cat<<EOF | sudo tee /etc/default/teleport
-GOOGLE_APPLICATION_CREDENTIALS="/etc/google-cloud-credentials.json"
+GOOGLE_APPLICATION_CREDENTIALS="/var/lib/teleport/google-cloud-credentials.json"
 EOF
 ```
 
@@ -260,7 +302,7 @@ $ sudo systemctl start teleport
 </TabItem>
 <TabItem label="TAR archive">
 ```code
-$ export GOOGLE_APPLICATION_CREDENTIALS="/etc/google-cloud-credentials.json"
+$ export GOOGLE_APPLICATION_CREDENTIALS="/var/lib/teleport/google-cloud-credentials.json"
 $ sudo -E teleport start
 ```
 </TabItem>
