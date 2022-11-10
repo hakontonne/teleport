@@ -88,7 +88,12 @@ func (f *rdsDBInstancesFetcher) Get(ctx context.Context) (types.Databases, error
 
 // getRDSDatabases returns a list of database resources representing RDS instances.
 func (f *rdsDBInstancesFetcher) getRDSDatabases(ctx context.Context) (types.Databases, error) {
-	instances, err := getAllDBInstances(ctx, f.cfg.RDS, common.MaxPages)
+	instances, err := getAllDBInstances(ctx, f.cfg.RDS, common.MaxPages, false)
+	if common.IsUnrecognizedAWSEngineNameError(err) {
+		f.log.WithError(err).Warn("Teleport supports an engine which is unrecognized in this AWS region. Querying engine versions.")
+		// fallback to describe only instances with recognized engines in the AWS region.
+		instances, err = getAllDBInstances(ctx, f.cfg.RDS, common.MaxPages, true)
+	}
 	if err != nil {
 		return nil, common.ConvertError(err)
 	}
@@ -122,16 +127,20 @@ func (f *rdsDBInstancesFetcher) getRDSDatabases(ctx context.Context) (types.Data
 
 // getAllDBInstances fetches all RDS instances using the provided client, up
 // to the specified max number of pages.
-func getAllDBInstances(ctx context.Context, rdsClient rdsiface.RDSAPI, maxPages int) (instances []*rds.DBInstance, err error) {
+func getAllDBInstances(ctx context.Context, rdsClient rdsiface.RDSAPI, maxPages int, checkFilters bool) (instances []*rds.DBInstance, err error) {
+	filters, err := rdsFilters(ctx, rdsClient, checkFilters, maxPages)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	var pageNum int
 	err = rdsClient.DescribeDBInstancesPagesWithContext(ctx, &rds.DescribeDBInstancesInput{
-		Filters: rdsFilters(),
+		Filters: filters,
 	}, func(ddo *rds.DescribeDBInstancesOutput, lastPage bool) bool {
 		pageNum++
 		instances = append(instances, ddo.DBInstances...)
 		return pageNum <= maxPages
 	})
-	return instances, common.ConvertError(err)
+	return instances, trace.Wrap(err)
 }
 
 // String returns the fetcher's string description.
@@ -173,7 +182,12 @@ func (f *rdsAuroraClustersFetcher) Get(ctx context.Context) (types.Databases, er
 
 // getAuroraDatabases returns a list of database resources representing RDS clusters.
 func (f *rdsAuroraClustersFetcher) getAuroraDatabases(ctx context.Context) (types.Databases, error) {
-	clusters, err := getAllDBClusters(ctx, f.cfg.RDS, common.MaxPages)
+	clusters, err := getAllDBClusters(ctx, f.cfg.RDS, common.MaxPages, false)
+	if common.IsUnrecognizedAWSEngineNameError(err) {
+		f.log.WithError(err).Warn("Teleport supports an engine which is unrecognized in this AWS region. Querying engine versions.")
+		// fallback to try to describe only clusters with engines recognized in the AWS region.
+		clusters, err = getAllDBClusters(ctx, f.cfg.RDS, common.MaxPages, true)
+	}
 	if err != nil {
 		return nil, common.ConvertError(err)
 	}
@@ -248,16 +262,20 @@ func (f *rdsAuroraClustersFetcher) getAuroraDatabases(ctx context.Context) (type
 
 // getAllDBClusters fetches all RDS clusters using the provided client, up to
 // the specified max number of pages.
-func getAllDBClusters(ctx context.Context, rdsClient rdsiface.RDSAPI, maxPages int) (clusters []*rds.DBCluster, err error) {
+func getAllDBClusters(ctx context.Context, rdsClient rdsiface.RDSAPI, maxPages int, checkFilters bool) (clusters []*rds.DBCluster, err error) {
+	filters, err := auroraFilters(ctx, rdsClient, checkFilters, maxPages)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	var pageNum int
 	err = rdsClient.DescribeDBClustersPagesWithContext(ctx, &rds.DescribeDBClustersInput{
-		Filters: auroraFilters(),
+		Filters: filters,
 	}, func(ddo *rds.DescribeDBClustersOutput, lastPage bool) bool {
 		pageNum++
 		clusters = append(clusters, ddo.DBClusters...)
 		return pageNum <= maxPages
 	})
-	return clusters, common.ConvertError(err)
+	return clusters, trace.Wrap(err)
 }
 
 // String returns the fetcher's string description.
@@ -268,24 +286,84 @@ func (f *rdsAuroraClustersFetcher) String() string {
 
 // rdsFilters returns filters to make sure DescribeDBInstances call returns
 // only databases with engines Teleport supports.
-func rdsFilters() []*rds.Filter {
+func rdsFilters(ctx context.Context, rdsClient rdsiface.RDSAPI, checkFilters bool, maxPages int) ([]*rds.Filter, error) {
+	supportedEngines := []string{
+		services.RDSEnginePostgres,
+		services.RDSEngineMySQL,
+		services.RDSEngineMariaDB,
+	}
+	if !checkFilters {
+		return []*rds.Filter{{
+			Name:   aws.String("engine"),
+			Values: aws.StringSlice(supportedEngines),
+		}}, nil
+	}
+
+	engines, err := recognizedRDSEngines(ctx, rdsClient, supportedEngines, maxPages)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	return []*rds.Filter{{
-		Name: aws.String("engine"),
-		Values: aws.StringSlice([]string{
-			services.RDSEnginePostgres,
-			services.RDSEngineMySQL,
-			services.RDSEngineMariaDB}),
-	}}
+		Name:   aws.String("engine"),
+		Values: aws.StringSlice(engines),
+	}}, nil
 }
 
 // auroraFilters returns filters to make sure DescribeDBClusters call returns
 // only databases with engines Teleport supports.
-func auroraFilters() []*rds.Filter {
+func auroraFilters(ctx context.Context, rdsClient rdsiface.RDSAPI, checkFilters bool, maxPages int) ([]*rds.Filter, error) {
+	supportedEngines := []string{
+		services.RDSEngineAurora,
+		services.RDSEngineAuroraMySQL,
+		services.RDSEngineAuroraPostgres,
+	}
+	if !checkFilters {
+		return []*rds.Filter{{
+			Name:   aws.String("engine"),
+			Values: aws.StringSlice(supportedEngines),
+		}}, nil
+	}
+
+	engines, err := recognizedRDSEngines(ctx, rdsClient, supportedEngines, maxPages)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	return []*rds.Filter{{
-		Name: aws.String("engine"),
-		Values: aws.StringSlice([]string{
-			services.RDSEngineAurora,
-			services.RDSEngineAuroraMySQL,
-			services.RDSEngineAuroraPostgres}),
-	}}
+		Name:   aws.String("engine"),
+		Values: aws.StringSlice(engines),
+	}}, nil
+}
+
+// recognizedRDSEngines returns the names of engines which are recognized in the region of the RDS client,
+// filtered to only include Teleport supported engines.
+func recognizedRDSEngines(ctx context.Context, rdsClient rdsiface.RDSAPI, supportedEngines []string, maxPages int) ([]string, error) {
+	var engineVersions []*rds.DBEngineVersion
+	var pageNum int
+	// https://docs.aws.amazon.com/sdk-for-go/api/service/rds/#RDS.DescribeDBEngineVersionsPages
+	err := rdsClient.DescribeDBEngineVersionsPagesWithContext(ctx, &rds.DescribeDBEngineVersionsInput{},
+		func(out *rds.DescribeDBEngineVersionsOutput, lastPage bool) bool {
+			pageNum++
+			engineVersions = append(engineVersions, out.DBEngineVersions...)
+			return pageNum <= maxPages
+		})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	recognized := make(map[string]struct{})
+	for _, result := range engineVersions {
+		if result == nil || result.Engine == nil {
+			continue
+		}
+		recognized[*result.Engine] = struct{}{}
+	}
+	engines := []string{}
+	for _, engine := range supportedEngines {
+		if _, ok := recognized[engine]; ok {
+			engines = append(engines, engine)
+		}
+	}
+	if len(engines) == 0 {
+		return nil, trace.NotFound("Teleport supports engine names %v but none are recognized in this region.", supportedEngines)
+	}
+	return engines, nil
 }
