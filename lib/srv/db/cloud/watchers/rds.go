@@ -29,6 +29,7 @@ import (
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/srv/db/common"
+	"github.com/gravitational/teleport/lib/utils"
 )
 
 // rdsFetcherConfig is the RDS databases fetcher configuration.
@@ -299,7 +300,8 @@ func rdsFilters(ctx context.Context, rdsClient rdsiface.RDSAPI, checkFilters boo
 		}}, nil
 	}
 
-	engines, err := recognizedRDSEngines(ctx, rdsClient, supportedEngines, maxPages)
+	// filter supported engines to include only the ones recognized by AWS in this region.
+	engines, err := filterByRecognizedRDSEngines(ctx, rdsClient, supportedEngines, maxPages)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -324,7 +326,8 @@ func auroraFilters(ctx context.Context, rdsClient rdsiface.RDSAPI, checkFilters 
 		}}, nil
 	}
 
-	engines, err := recognizedRDSEngines(ctx, rdsClient, supportedEngines, maxPages)
+	// filter supported engines to include only the ones recognized by AWS in this region.
+	engines, err := filterByRecognizedRDSEngines(ctx, rdsClient, supportedEngines, maxPages)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -334,36 +337,46 @@ func auroraFilters(ctx context.Context, rdsClient rdsiface.RDSAPI, checkFilters 
 	}}, nil
 }
 
-// recognizedRDSEngines returns the names of engines which are recognized in the region of the RDS client,
-// filtered to only include Teleport supported engines.
-func recognizedRDSEngines(ctx context.Context, rdsClient rdsiface.RDSAPI, supportedEngines []string, maxPages int) ([]string, error) {
-	var engineVersions []*rds.DBEngineVersion
-	var pageNum int
-	// https://docs.aws.amazon.com/sdk-for-go/api/service/rds/#RDS.DescribeDBEngineVersionsPages
-	err := rdsClient.DescribeDBEngineVersionsPagesWithContext(ctx, &rds.DescribeDBEngineVersionsInput{},
-		func(out *rds.DescribeDBEngineVersionsOutput, lastPage bool) bool {
-			pageNum++
-			engineVersions = append(engineVersions, out.DBEngineVersions...)
-			return pageNum <= maxPages
-		})
+// filterByRecognizedRDSEngines filters Teleport supported engine names to include only those recognized by AWS.
+func filterByRecognizedRDSEngines(ctx context.Context, rdsClient rdsiface.RDSAPI, supportedEngines []string, maxPages int) ([]string, error) {
+	recognized, err := getRecognizedRDSEngines(ctx, rdsClient, maxPages)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	recognized := make(map[string]struct{})
-	for _, result := range engineVersions {
-		if result == nil || result.Engine == nil {
-			continue
-		}
-		recognized[aws.StringValue(result.Engine)] = struct{}{}
-	}
-	engines := []string{}
+	// now filter for supported + recognized engine names.
+	var engines []string
 	for _, engine := range supportedEngines {
 		if _, ok := recognized[engine]; ok {
 			engines = append(engines, engine)
 		}
 	}
+	// important that we don't return 0 engine names, as that would apply no filtering at all in AWS DescribeDBClusters/Instances calls.
 	if len(engines) == 0 {
 		return nil, trace.NotFound("Teleport supports engine names %v but none are recognized in this region.", supportedEngines)
 	}
 	return engines, nil
+}
+
+// getRecognizedRDSEngines gets all engine versions within an AWS region and builds a string set of AWS recognized engine names.
+func getRecognizedRDSEngines(ctx context.Context, rdsClient rdsiface.RDSAPI, maxPages int) (map[string]struct{}, error) {
+	var engines []string
+	var pageNum int
+	// https://docs.aws.amazon.com/sdk-for-go/api/service/rds/#RDS.DescribeDBEngineVersionsPages
+	err := rdsClient.DescribeDBEngineVersionsPagesWithContext(ctx, &rds.DescribeDBEngineVersionsInput{},
+		func(out *rds.DescribeDBEngineVersionsOutput, lastPage bool) bool {
+			pageNum++
+			if out.DBEngineVersions != nil {
+				for _, e := range out.DBEngineVersions {
+					if e == nil {
+						continue
+					}
+					engines = append(engines, aws.StringValue(e.Engine))
+				}
+			}
+			return pageNum <= maxPages
+		})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return utils.StringsSet(engines), nil
 }
