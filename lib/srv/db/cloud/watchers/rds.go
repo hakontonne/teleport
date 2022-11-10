@@ -352,7 +352,7 @@ func filterByRecognizedRDSEngines(ctx context.Context, rdsClient rdsiface.RDSAPI
 	}
 	// important that we don't return 0 engine names, as that would apply no filtering at all in AWS DescribeDBClusters/Instances calls.
 	if len(engines) == 0 {
-		return nil, trace.NotFound("Teleport supports engine names %v but none are recognized in this region.", supportedEngines)
+		return nil, trace.NotFound("Teleport supports engine names %v but none are recognized in this region", supportedEngines)
 	}
 	return engines, nil
 }
