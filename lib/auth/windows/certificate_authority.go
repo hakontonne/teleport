@@ -17,13 +17,32 @@ package windows
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/pem"
+	"net"
+	"strings"
+	"sync"
+	"time"
 
+	"github.com/go-ldap/ldap/v3"
 	"github.com/gravitational/trace"
 	"github.com/sirupsen/logrus"
 
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/lib/auth"
+	"github.com/gravitational/teleport/lib/modules"
+)
+
+const (
+	// ldapDialTimeout is the timeout for dialing the LDAP server
+	// when making an initial connection
+	ldapDialTimeout = 5 * time.Second
+
+	// ldapRequestTimeout is the timeout for making LDAP requests.
+	// It is larger than the dial timeout because LDAP queries in large
+	// Active Directory environments may take longer to complete.
+	ldapRequestTimeout = 20 * time.Second
 )
 
 // NewCertificateStoreClient returns a new structure for modifying windows certificates in a windows CA
@@ -36,12 +55,19 @@ func NewCertificateStoreClient(cfg CertificateStoreConfig) *CertificateStoreClie
 // CertificateStoreClient implements access to a Windows Certificate Authority
 type CertificateStoreClient struct {
 	cfg CertificateStoreConfig
+	mu  sync.Mutex
+
+	ldapInitialized bool
+	ldapCertRenew   *time.Timer
 }
 
 // CertificateStoreConfig is a config structure for a Windows Certificate Authority
 type CertificateStoreConfig struct {
 	// AccessPoint is the Auth API client (with caching).
 	AccessPoint auth.WindowsDesktopAccessPoint
+	// AuthClient is the Auth API client (without caching).
+	AuthClient auth.ClientI
+
 	// LDAPConfig is the ldap configuration
 	LDAPConfig
 	// Log is the logging sink for the service
@@ -50,6 +76,9 @@ type CertificateStoreConfig struct {
 	ClusterName string
 	// LC is the LDAPClient
 	LC *LDAPClient
+
+	CertTTL       time.Duration
+	RetryInterval time.Duration
 }
 
 // Update publishes the certificate to the current cluster's certificate authority
@@ -198,4 +227,139 @@ func (c *CertificateStoreClient) updateCRL(ctx context.Context, crlDER []byte) e
 		c.cfg.Log.Info("Added CRL for Windows logins via LDAP")
 	}
 	return nil
+}
+
+func (c *CertificateStoreClient) tlsConfigForLDAP(ctx context.Context) (*tls.Config, error) {
+	// trim NETBIOS name from username
+	user := c.cfg.Username
+	if i := strings.LastIndex(c.cfg.Username, `\`); i != -1 {
+		user = user[i+1:]
+	}
+
+	certDER, keyDER, err := GenerateCredentials(ctx, user, c.cfg.Domain, c.cfg.CertTTL, c.cfg.ClusterName, c.cfg.LDAPConfig, c.cfg.AuthClient)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		return nil, trace.Wrap(err, "parsing cert DER")
+	}
+
+	key, err := x509.ParsePKCS1PrivateKey(keyDER)
+	if err != nil {
+		return nil, trace.Wrap(err, "parsing key DER")
+	}
+
+	tc := &tls.Config{
+		Certificates: []tls.Certificate{
+			{
+				Certificate: [][]byte{cert.Raw},
+				PrivateKey:  key,
+			},
+		},
+		InsecureSkipVerify: c.cfg.InsecureSkipVerify,
+		ServerName:         c.cfg.ServerName,
+	}
+
+	if c.cfg.CA != nil {
+		pool := x509.NewCertPool()
+		pool.AddCert(c.cfg.CA)
+		tc.RootCAs = pool
+	}
+
+	return tc, nil
+}
+
+// InitializeLDAP requests a TLS certificate from the auth server to be used for
+// authenticating with the LDAP server. If the certificate is obtained, and
+// authentication with the LDAP server succeeds, it schedules a renewal to take
+// place before the certificate expires. If we are unable to obtain a certificate
+// and authenticate with the LDAP server, then the operation will be automatically
+// retried.
+func (c *CertificateStoreClient) InitializeLDAP(ctx context.Context) error {
+	tc, err := c.tlsConfigForLDAP(ctx)
+	if trace.IsAccessDenied(err) && modules.GetModules().BuildType() == modules.BuildEnterprise {
+		c.cfg.Log.Warn("Could not generate certificate for LDAPS. Ensure that the auth server is licensed for desktop access.")
+	}
+	if err != nil {
+		c.mu.Lock()
+		c.ldapInitialized = false
+		// in the case where we're not licensed for desktop access, we retry less frequently,
+		// since this is likely not an intermittent error that will resolve itself quickly
+		c.scheduleNextLDAPCertRenewalLocked(ctx, c.cfg.RetryInterval*3)
+		c.mu.Unlock()
+		return trace.Wrap(err)
+	}
+
+	conn, err := ldap.DialURL("ldaps://"+c.cfg.Addr,
+		ldap.DialWithTLSDialer(tc, &net.Dialer{Timeout: ldapDialTimeout}))
+	if err != nil {
+		c.mu.Lock()
+		c.ldapInitialized = false
+		c.scheduleNextLDAPCertRenewalLocked(ctx, c.cfg.RetryInterval)
+		c.mu.Unlock()
+		return trace.Wrap(err, "dial")
+	}
+
+	conn.SetTimeout(ldapRequestTimeout)
+	c.cfg.LC.SetClient(conn)
+
+	// Note: admin still needs to import our CA into the Group Policy following
+	// https://docs.vmware.com/en/VMware-Horizon-7/7.13/horizon-installation/GUID-7966AE16-D98F-430E-A916-391E8EAAFE18.html
+	//
+	// We can find the group policy object via LDAP, but it only contains an
+	// SMB file path with the actual policy. See
+	// https://en.wikipedia.org/wiki/Group_Policy
+	//
+	// In theory, we could update the policy file(s) over SMB following
+	// https://docs.microsoft.com/en-us/previous-versions/windows/desktop/policy/registry-policy-file-format,
+	// but I'm leaving this for later.
+	//
+	if err := c.Update(ctx); err != nil {
+		return trace.Wrap(err)
+	}
+
+	c.mu.Lock()
+	c.ldapInitialized = true
+	c.scheduleNextLDAPCertRenewalLocked(ctx, c.cfg.CertTTL/3)
+	c.mu.Unlock()
+
+	return nil
+}
+
+// scheduleNextLDAPCertRenewalLocked schedules a renewal of our LDAP credentials
+// after some amount of time has elapsed. If an existing renewal is already
+// scheduled, it is canceled and this new one takes its place.
+//
+// The lock on c.mu MUST be held.
+func (c *CertificateStoreClient) scheduleNextLDAPCertRenewalLocked(ctx context.Context, after time.Duration) {
+	if c.ldapCertRenew != nil {
+		c.ldapCertRenew.Reset(after)
+	} else {
+		c.ldapCertRenew = time.AfterFunc(after, func() {
+			if err := c.InitializeLDAP(ctx); err != nil {
+				c.cfg.Log.WithError(err).Error("couldn't renew certificate for LDAP auth")
+			}
+		})
+	}
+}
+
+// Close closes the underlying LDAP Client
+func (c *CertificateStoreClient) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.ldapCertRenew != nil {
+		c.ldapCertRenew.Stop()
+	}
+	c.cfg.LC.Close()
+	return nil
+}
+
+// LDAPReady reports whether the ldap client is initialized
+func (c *CertificateStoreClient) LDAPReady() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.ldapInitialized
 }

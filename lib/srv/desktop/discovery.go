@@ -89,7 +89,7 @@ func (s *WindowsService) ldapSearchFilter() string {
 
 // getDesktopsFromLDAP discovers Windows hosts via LDAP
 func (s *WindowsService) getDesktopsFromLDAP() types.ResourcesWithLabelsMap {
-	if !s.ldapReady() {
+	if !s.ca.LDAPReady() {
 		s.cfg.Log.Warn("skipping desktop discovery: LDAP not yet initialized")
 		return nil
 	}
@@ -108,7 +108,7 @@ func (s *WindowsService) getDesktopsFromLDAP() types.ResourcesWithLabelsMap {
 		// in this case, so that the reconciler doesn't delete the desktops it already
 		// knows about.
 		s.cfg.Log.Info("LDAP connection error when searching for desktops, reinitializing client")
-		if err := s.initializeLDAP(); err != nil {
+		if err := s.ca.InitializeLDAP(s.closeCtx); err != nil {
 			s.cfg.Log.Errorf("failed to reinitialize LDAP client, will retry on next reconcile: %v", err)
 		}
 		return s.lastDiscoveryResults
