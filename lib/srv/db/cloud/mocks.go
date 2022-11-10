@@ -697,7 +697,7 @@ func applyInstanceFilters(in []*rds.DBInstance, filters []*rds.Filter) ([]*rds.D
 
 // applyClusterFilters filters RDS DBClusters using the provided RDS filters.
 func applyClusterFilters(in []*rds.DBCluster, filters []*rds.Filter) ([]*rds.DBCluster, error) {
-	out := []*rds.DBCluster{}
+	var out []*rds.DBCluster 
 	efs := engineFilterSet(filters)
 	for _, cluster := range in {
 		if clusterEngineMatches(cluster, efs) {
