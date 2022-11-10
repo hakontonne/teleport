@@ -266,7 +266,7 @@ func TestWatcher(t *testing.T) {
 			name: "skip access denied errors",
 			awsMatchers: []services.AWSMatcher{{
 				Types:   []string{services.AWSMatcherRDS},
-				Regions: []string{"ca-central-1", "us-west-1", "us-east-1"},
+				Regions: []string{"ca-central-1", "us-west-1", "us-east-1", "us-east-2"},
 				Tags:    types.Labels{"*": []string{"*"}},
 			}},
 			clients: &clients.TestCloudClients{
@@ -302,6 +302,48 @@ func TestWatcher(t *testing.T) {
 				},
 			},
 			expectedDatabases: types.Databases{rdsDatabase4, auroraDatabase1},
+		},
+		{
+			// In this test we make the AWS "recognized" filters mismatch the ones returned from DescribeDBEngineVersionsWithContext.
+			// If there are unrecognized engines in the filters, but DescribeDBEngineVersionsWithContext returns engines that are still unrecognized in filters,
+			// then RDS fetcher should bail out with an "unrecognized engine name" error - it is this case we want to catch and make sure the watcher skips that
+			// fetcher rather than stopping. The reason is that while one fetcher may fail, others may be in other AWS regions unaffected by the problem.
+			name: "skip unrecognized engine name errors",
+			awsMatchers: []services.AWSMatcher{{
+				Types:   []string{services.AWSMatcherRDS},
+				Regions: []string{"us-east-1", "us-east-2"},
+				Tags:    types.Labels{"*": []string{"*"}},
+			}},
+			clients: &clients.TestCloudClients{
+				RDSPerRegion: map[string]rdsiface.RDSAPI{
+					"us-east-1": &cloud.RDSMockByDBType{
+						DBInstances: &cloud.RDSMockUnauth{},
+						DBClusters: &cloud.RDSMock{
+							DBClusters:       []*rds.DBCluster{auroraCluster1},
+							DBEngineVersions: []*rds.DBEngineVersion{auroraMySQLEngine},
+						},
+						DBProxies: &cloud.RDSMockUnauth{},
+						// matching db engine versions - we should get this database.
+						DBEngineVersions: &cloud.RDSMock{DBEngineVersions: []*rds.DBEngineVersion{auroraMySQLEngine}},
+					},
+					"us-east-2": &cloud.RDSMockByDBType{
+						DBInstances: &cloud.RDSMock{
+							DBInstances:      []*rds.DBInstance{rdsInstance5},
+							DBEngineVersions: []*rds.DBEngineVersion{postgresEngine},
+						},
+						DBClusters: &cloud.RDSMock{
+							DBClusters: []*rds.DBCluster{auroraCluster2},
+							// mismatched DBEngineVersions - this one will be used for DescribeDBClustersPagesWithContext.
+							DBEngineVersions: []*rds.DBEngineVersion{},
+						},
+						DBProxies: &cloud.RDSMockUnauth{},
+						// mismatched DBEngineVersions - this one will be used for DescribeDBEngineVersionsWithContext.
+						// since "aurora-mysql" is "unrecognized" by the mock API, the subsequent retry will fail and the fetcher will give up.
+						DBEngineVersions: &cloud.RDSMock{DBEngineVersions: []*rds.DBEngineVersion{auroraMySQLEngine, postgresEngine}},
+					},
+				},
+			},
+			expectedDatabases: types.Databases{auroraDatabase1, rdsDatabase5},
 		},
 		{
 			name: "Redshift labels matching",
