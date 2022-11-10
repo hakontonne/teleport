@@ -3,13 +3,16 @@ title: Teleport GKE Auto-Discovery (Preview)
 description: How to configure auto-discovery of Google Kubernetes Engine clusters in Teleport.
 ---
 
-The Teleport Discovery Service can automatically discover Google Kubernetes
-Engine (GKE) clusters and enroll them in Teleport. Using Teleport Kubernetes
-Auto-Discovery, you can manage secure access to your GKE clusters as soon as
-they are created, without needing to set up Teleport within your clusters.
+The Teleport Discovery Service can automatically register your Google Kubernetes
+Engine (GKE) clusters with Teleport. With Teleport Kubernetes Auto-Discovery,
+you can configure the Teleport Kubernetes Service and Discovery Service once,
+then create GKE clusters without needing to register them with Teleport after
+each creation.  
 
 In this guide, we will show you how to get started with Teleport Kubernetes
 Auto-Discovery for GKE.
+
+## Overview
 
 (!docs/pages/kubernetes-access/discovery/includes/step-description.mdx!)
 
@@ -17,8 +20,8 @@ Auto-Discovery for GKE.
 
 (!docs/pages/includes/edition-prereqs-tabs.mdx!)
 
-- A Google Cloud account with permissions to create GKE clusters and service
-  accounts.
+- A Google Cloud account with permissions to create GKE clusters, IAM roles, and
+  service accounts.
 - One or more GKE clusters running. Your Kubernetes user must have permissions
   to create `ClusterRole` and `ClusterRoleBinding` resources in your clusters.
 - A Linux host where you will run the Teleport Discovery and Kubernetes
@@ -29,36 +32,46 @@ Auto-Discovery for GKE.
 
 ## Step 1/3. Obtain Google Cloud credentials
 
+The Teleport Discovery Service uses a Google Cloud service account to
+authenticate to your Google Cloud account and discover GKE clusters. In this
+step, you will create a service account and download a credentials file for the
+Teleport Discovery Service.
+
+### Create an IAM role
+
+The Teleport Discovery Service needs permissions to access GKE clusters
+associated with your Google Cloud project. To grant it these permissions, create
+a new IAM role.
+
+Visit the [IAM & Admin](https://console.cloud.google.com/iam-admin/roles) page
+of the Google Cloud console. Click **Create Role**.
+
+For **Title**, enter `GKE Cluster Discoverer`.
+
+For **ID**, enter `GKEKubernetesAutoDisc`.
+
+Set **Role launch stage** to "General Availability".
+
+Click **Add Permissions** and ensure that you include the following:
+
+- `container.clusters.get`
+- `container.clusters.list`
+
+Click **Create**.
+
 ### Create a service account
 
-The Teleport Discovery Service uses a Google Cloud credentials file to
-authenticate to your Google Cloud account and discover GKE clusters. 
-
-
 In the Google Cloud console, go to the [Service
-Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts) page and
-create a service account.
+Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts) page,
+select the project associated with your GKE cluster, and click **Create Service
+Account** 
 
-{/* TODO: Show a screenshot*/}
+For **Service account name**, enter "Teleport Discovery Service". The Google
+Cloud console will suggest an ID similar to `teleport-discovery-service` with a
+numberical suffix. We will assume that you are using this service account ID for
+the rest of this guide.
 
-To generate the credentials file, first create a service account with the
-following definition:
-
-{/* TODO: show more specific UI steps for creating this?*/}
-
-```yaml
-description: 'GKE Auto-Discovery'
-includedPermissions:
-- container.clusters.impersonate
-- container.clusters.get
-- container.clusters.list
-- container.pods.get
-- container.selfSubjectAccessReviews.create
-- container.selfSubjectRulesReviews.create
-name: projects/{projectID}/roles/GKEKubernetesAutoDisc
-stage: GA
-title: GKEKubernetesAutoDisc
-```
+Click **Create and Continue**.
 
 ### Download a credentials file
 
