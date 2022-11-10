@@ -40,7 +40,7 @@ import (
 	apidefaults "github.com/gravitational/teleport/api/defaults"
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/lib/auth"
-	"github.com/gravitational/teleport/lib/auth/native"
+	"github.com/gravitational/teleport/lib/auth/keygen"
 	"github.com/gravitational/teleport/lib/auth/testauthority"
 	"github.com/gravitational/teleport/lib/events/eventstest"
 	"github.com/gravitational/teleport/lib/limiter"
@@ -134,7 +134,7 @@ func setupTestContext(ctx context.Context, t *testing.T, cfg testConfig) *testCo
 
 	// Create test audit events emitter.
 	testCtx.emitter = eventstest.NewChannelEmitter(100)
-	keyGen := native.New(testCtx.ctx)
+	keyGen := keygen.New(testCtx.ctx)
 
 	// heartbeatsWaitChannel waits for clusters heartbeats to start.
 	heartbeatsWaitChannel := make(chan struct{}, len(cfg.clusters)+1)
