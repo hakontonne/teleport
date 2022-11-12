@@ -121,7 +121,7 @@ func (rc *ResourceCommand) Initialize(app *kingpin.Application, config *service.
 	<resource type>  Type of a resource [for example: rc]
 	<resource name>  Resource name to update
 
-	Examples:
+	Example:
 	$ tctl update rc/remote`).SetValue(&rc.ref)
 	rc.updateCmd.Flag("set-labels", "Set labels").StringVar(&rc.labels)
 	rc.updateCmd.Flag("set-ttl", "Set TTL").StringVar(&rc.ttl)
@@ -276,7 +276,7 @@ func (rc *ResourceCommand) Create(ctx context.Context, client auth.ClientI) (err
 		if !found {
 			// if we're trying to create an OIDC/SAML connector with the OSS version of tctl, return a specific error
 			if raw.Kind == "oidc" || raw.Kind == "saml" {
-				return trace.BadParameter("creating resources of type %q is only supported in Teleport Enterprise. If you are connecting to a Teleport Enterprise Cluster you must install the enterprise version of tctl. https://goteleport.com/teleport/docs/enterprise/", raw.Kind)
+				return trace.BadParameter("creating resources of type %q is only supported in Teleport Enterprise. If you are connecting to a Teleport Enterprise Cluster you must install the enterprise version of tctl. https://goteleport.com/docs/deploy-a-cluster/teleport-enterprise/introduction/", raw.Kind)
 			}
 			return trace.BadParameter("creating resources of type %q is not supported", raw.Kind)
 		}
