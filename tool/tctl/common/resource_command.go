@@ -108,6 +108,8 @@ func (rc *ResourceCommand) Initialize(app *kingpin.Application, config *service.
 		types.KindToken:                   rc.createToken,
 		types.KindInstaller:               rc.createInstaller,
 		types.KindNode:                    rc.createNode,
+		types.KindOIDCConnector:           rc.createConnector,
+		types.KindSAMLConnector:           rc.createConnector,
 	}
 	rc.config = config
 
@@ -640,6 +642,76 @@ func (rc *ResourceCommand) createNode(ctx context.Context, client auth.ClientI, 
 
 	_, err = client.UpsertNode(ctx, server)
 	return trace.Wrap(err)
+}
+
+func (rc *ResourceCommand) createConnector(ctx context.Context, client auth.ClientI, raw services.UnknownResource) error {
+	var (
+		connectorName string
+		exists        bool
+	)
+	switch raw.Kind {
+	case types.KindSAMLConnector:
+		// Create services.SAMLConnector from raw YAML to extract the connector name.
+		conn, err := services.UnmarshalSAMLConnector(raw.Raw)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		connectorName = conn.GetName()
+
+		// Check if this connector is already in the backend. If it is, and the force
+		// flag was not supplied, return an "connector already exists" error.
+		foundConn, err := client.GetSAMLConnector(ctx, connectorName, true)
+		if err != nil && !trace.IsNotFound(err) {
+			return trace.Wrap(err)
+		}
+		exists = (err == nil)
+		if !rc.IsForced() && exists {
+			return trace.AlreadyExists("connector '%s' already exists, use -f flag to override", connectorName)
+		}
+
+		// If the connector being pushed to the backend does not have a signing key
+		// in it and an existing connector was found in the backend, extract the
+		// signing key from the found connector and inject it into the connector
+		// being injected into the backend.
+		if conn.GetSigningKeyPair() == nil && exists {
+			conn.SetSigningKeyPair(foundConn.GetSigningKeyPair())
+		}
+		if err := conn.CheckAndSetDefaults(); err != nil {
+			return trace.Wrap(err)
+		}
+
+		if err = client.UpsertSAMLConnector(ctx, conn); err != nil {
+			return trace.Wrap(err)
+		}
+
+	case types.KindOIDCConnector:
+		conn, err := services.UnmarshalOIDCConnector(raw.Raw)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		if err := conn.CheckAndSetDefaults(); err != nil {
+			return trace.Wrap(err)
+		}
+		connectorName = conn.GetName()
+		_, err = client.GetOIDCConnector(ctx, connectorName, false)
+		if err != nil && !trace.IsNotFound(err) {
+			return trace.Wrap(err)
+		}
+		exists = (err == nil)
+		if !rc.IsForced() && exists {
+			return trace.AlreadyExists("connector '%s' already exists, use -f flag to override", connectorName)
+		}
+		if err = client.UpsertOIDCConnector(ctx, conn); err != nil {
+			return trace.Wrap(err)
+		}
+
+	// unknown connector type
+	default:
+		return trace.BadParameter("unknown connector type: '%s'", raw.Kind)
+	}
+
+	fmt.Printf("authentication connector '%s' has been %s\n", connectorName, UpsertVerb(exists, rc.IsForced()))
+	return nil
 }
 
 // Delete deletes resource by name

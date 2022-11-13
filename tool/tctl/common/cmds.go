@@ -40,6 +40,7 @@ func Commands() []CLICommand {
 		&RecordingsCommand{},
 		&AlertCommand{},
 		&ProxyCommand{},
+		&ResourceCommand{},
 		&EditCommand{},
 	}
 }
@@ -48,7 +49,6 @@ func Commands() []CLICommand {
 // for oss and ent.
 func OSSCommands() []CLICommand {
 	return []CLICommand{
-		&ResourceCommand{},
 		&configure.SSOConfigureCommand{},
 		&tester.SSOTestCommand{},
 	}
